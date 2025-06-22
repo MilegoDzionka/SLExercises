@@ -1,0 +1,1821 @@
+---
+title: "Classification"
+author: "Exercises with solutions"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: yes
+---
+
+<style>
+body {
+  max-width: none !important;
+  width: 100% !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  white-space: normal !important;
+}
+
+body .container,
+body .container-fluid,
+body .main-container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 auto;
+  padding-left: 2em;
+  padding-right: 2em;
+  box-sizing: border-box;
+}
+
+.tab-button {
+  background-color: #eee;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.tab-button.active {
+  background-color: #ccc;
+}
+
+.tab-content {
+  display: none;
+  padding: 10px;
+  border-top: 1px solid #ccc;
+}
+
+.tab-content.active {
+  display: block;
+}
+</style>
+
+```{r setup, include=FALSE}
+library(reticulate)
+#use_python("D:/Python/python.exe", required = TRUE)
+use_python("C:\\Users\\Dominika\\AppData\\Local\\Programs\\Python\\Python313\\python.exe")
+```
+
+<div>
+  <button class="tab-button active" onclick="showTab('r1')">R</button>
+  <button class="tab-button" onclick="showTab('py1')">Python</button>
+</div>
+
+<div id="r1" class="tab-content active">
+
+# Exercise 1
+
+In this exercise, we will use the dataset `PimaIndiansDiabetes` from the `mlbench` package in R. The dataset contains diagnostic measurements for female patients of Pima Indian heritage.
+
+The variables of interests in the dataset:
+
+- **glucose**: plasma glucose concentration (glucose tolerance test)  
+- **age**: age (in years)  
+- **mass**: body mass index (BMI)  
+- **diabetes**: test result for diabetes (`"pos"` = positive, `"neg"` = negative)
+
+The goal is to model and predict diabetes diagnosis based on key clinical predictors.
+
+1. Fit a logistic regression model to predict `diabetes` using `glucose` as the predictor. Summarize the model and interpret the coefficient of `glucose`.
+
+2. Fit a multiple logistic regression model using `glucose`, `age` and `mass` as predictors. Report the coefficient estimates and identify which predictors are statistically significant.
+
+3. Create a histogram of `glucose` grouped by `diabetes` status. Does there appear to be a visible difference in `glucose` distribution between individuals who tested positive and those who tested negative for `diabetes`?
+
+4. Randomly split the data into a training set (70%) and a test set (30%). Use the model from **Exercise 1.2.** to make predictions on the test set. Generate a confusion matrix and report the classification performance, including e.g accuracy, sensitivity and specificity. Plot the ROC curve and compute the AUC for the test predictions.
+
+## Solution
+
+```{r warning = FALSE, message = FALSE}
+library(mlbench)
+library(ggplot2)
+library(dplyr)
+library(caret)
+library(pROC)
+
+data("PimaIndiansDiabetes")
+```
+
+We begin by fitting a logistic regression model to predict the binary outcome variable `diabetes` using `glucose`. Logistic regression is an appropriate method for this task because the response variable is binary, indicating either a *positive* or *negative* diabetes diagnosis.
+
+In R, this model is specified using the `glm()` function with the variable family = `binomial`. The syntax is `glm(diabetes ~ glucose, data = PimaIndiansDiabetes, family = binomial).`
+
+Once the model is fitted, we examine the output using the `summary()` function.
+
+```{r warning = FALSE, message = FALSE}
+# Fit a logistic regression model using glucose
+model1 <- glm(diabetes ~ glucose, data = PimaIndiansDiabetes, family = binomial)
+
+# Display summary of the model
+summary(model1)
+```
+
+The coefficient of `glucose`, which is equal to $0.0379$, indicates that each 1-unit increase in glucose level is associated with an increase of $0.0379$ in the log-odds of having diabetes. This coefficient is statistically significant ($p_{value}< 0.001$), suggesting a strong association between higher glucose levels and an increased probability of a positive diabetes diagnosis.
+
+To extend the analysis, we fit a multiple logistic regression model using `glucose`, `age` and `mass` as predictors.
+
+```{r warning = FALSE, message = FALSE}
+# Fit a logistic regression model using glucose, age and mass
+model2 <- glm(diabetes ~ glucose + age + mass, data = PimaIndiansDiabetes, family = binomial)
+
+# Summarize the model
+summary(model2)
+```
+
+For this model, the estimated coefficient for `glucose` is $0.0325$, for `age` is $0.0302$ and for `mass` is $0.0816$. All three predictors have positive coefficients and are statistically significant, indicating that increases in `glucose` levels, `age` and body `mass` index are each associated with a higher probability of a positive diabetes diagnosis.
+
+Next, we plot the histogram to visualize glucose distribution for diabetic vs non-diabetic patients.
+
+```{r warning = FALSE, message = FALSE}
+# Plot histogram 
+ggplot(PimaIndiansDiabetes, aes(x = glucose, fill = diabetes)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  labs(fill = "diabetes", x = "glucose", y = "Count")
+```
+
+We can observe that individuals with positive diabetes diagnoses tend to have higher glucose values, while those who tested negative are more concentrated in the lower glucose range. This pattern supports the results from the logistic regression model that glucose is a strong predictor of diabetes.
+
+Next, we evaluate how well the logistic regression model generalizes to unseen data. To do this, we divide the data into **training set** (to fit the model) and **test set** (to assess performance) in a $7:3$ ratio.
+
+We then use the model from **Exercise 1.2** to assess how well it predicts the diabetes outcome on the test set.
+
+```{r warning = FALSE, message = FALSE}
+# Set a random seed to ensure results are reproducible
+set.seed(123)
+
+# Create a partition: 70% training and 30% testing
+idx <- sample(seq_len(nrow(PimaIndiansDiabetes)), size = 0.7 * nrow(PimaIndiansDiabetes))
+train_data <- PimaIndiansDiabetes[idx, ]
+test_data <- PimaIndiansDiabetes[-idx, ]
+
+# Fit the logistic regression model on training data
+model2_test <- glm(diabetes ~ glucose + age + mass, data = train_data, family = binomial)
+
+# Predict probabilities on the test data
+probs <- predict(model2_test, newdata = test_data, type = "response")
+
+# Convert probabilities to class predictions (threshold = 0.5)
+preds <- ifelse(probs > 0.5, "pos", "neg")
+
+# Generate confusion matrix to compare predictions with actual values
+confusionMatrix(factor(preds, levels = c("neg", "pos")), factor(test_data$diabetes))
+```
+
+From confusion matrix we see the following quantities:
+
+- **True Positives** ($TP$): correctly predicted positive cases,
+- **True Negatives** ($TN$): correctly predicted negative cases,
+- **False Positives** ($FP$): predicted positive when actually negative,
+- **False Negatives** ($FN$): predicted negative when actually positive.
+
+Using these, we calculate standard performance metrics:
+
+- **Accuracy** - proportion of total predictions that are correct,
+- **Sensitivity** $\frac{TP}{TP+FN}$ - ability to correctly identify positive cases,
+- **Specificity** $\frac{TN}{TN+FP}$ - ability to correctly identify negative cases.
+
+In our case, the Accuracy is $75.22\%$ which means that the model correctly classifies about three-quarters of all cases, the Sensitivity is $84.67\%$ which means that among people with diabetes, $84.67\%$ are correctly identified and Specificity is $57.5\%$ which means that among people without diabetes, $57.5\%$ are correctly identified.
+
+To evaluate how well the model performs across all classification thresholds, we plot the **ROC (Receiver Operating Characteristic)** curve. This curve shows how Sensitivity and (1 − Specificity) vary as we adjust the threshold for classifying a case as positive.
+
+The **Area Under the Curve (AUC)** gives us a single measure of model performance:
+
+- AUC close to **1.0** indicates excellent class separation
+- AUC near **0.5** suggests no better than random guessing
+
+```{r}
+# Compute the ROC curve from predicted probabilities
+roc_obj <- roc(test_data$diabetes, probs, levels = c("neg", "pos"))
+
+# Plot the ROC curve
+plot(roc_obj, col = "blue", main = "ROC Curve")
+
+# Calculate the AUC value
+auc(roc_obj)
+```
+
+In our model, the AUC is $0.8318$, which indicates strong discriminative ability. This confirms that the model performs well in distinguishing between diabetic and non-diabetic individuals.
+
+# Exercise 2
+
+In this exercise, we will use the built-in `iris` dataset in R, which contains measurements of sepal and petal dimensions for three iris flower species.
+
+The dataset includes the following variables:
+
+- **Sepal.Length**: length of the sepal (cm)  
+- **Sepal.Width**: width of the sepal (cm)  
+- **Petal.Length**: length of the petal (cm)  
+- **Petal.Width**: width of the petal (cm)  
+- **Species**: species of iris (`setosa`, `versicolor`, or `virginica`)
+
+The goal is to classify the species of an iris flower based on its physical measurements using multiple classification methods.
+
+1. Fit a multinomial logistic regression model to predict `Species` using all four features. Summarize the model and report the estimated coefficients for each class.
+
+2. Fit a Linear Discriminant Analysis (LDA) model and a Quadratic Discriminant Analysis (QDA) model using the same predictors as in **Exercise 2.1**. Compare their confusion matrices and classification accuracy on a held-out $30\%$ test set. Which model performed better on the test set? 
+
+3. Create a scatterplot of `Petal.Length` vs. `Petal.Width`, coloring the points by species. Does the visual separation reflect what is captured by the models?
+
+4. Plot decision boundaries for both the LDA and QDA models using `Petal.Length` and `Petal.Width`. Do the boundaries reflect linear or nonlinear separations?
+
+# Solution
+
+```{r, warning=FALSE, message=FALSE}
+library(MASS)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+library(gridExtra)
+
+# Load dataset
+data(iris)
+```
+
+We begin by fitting a multinomial logistic regression model, which allows us to model a categorical outcome with more than two classes. In our case, the outcome variable `Species` has three clasess (`setosa`, `versicolor` and `virginica`). 
+
+To fit this type of model in R, we use the `multinom()` function from the `nnet` package. This function estimates the relationship between the predictor variables (sepal and petal dimensions) and the probability of belonging to each species, using one of the classes (by default, the first alphabetically - `setosa`) as a reference.
+
+```{r, warning=FALSE, message=FALSE}
+# Multinomial logistic regression using nnet::multinom
+library(nnet)
+multinom_model <- multinom(Species ~ ., data = iris)
+summary(multinom_model)
+```
+
+In multinomial logistic regression, each row in the coefficient table corresponds to one class compared to the reference class (`setosa`). The values represent the change in log-odds of being in that class (e.g., `versicolor`) versus the reference class (`setosa`) for a one-unit increase in the predictor.
+
+For instance, a one-unit increase in `Petal.Length` increases the log-odds of being `versicolor` (vs. `setosa`) by $14.24$.
+
+Next, we split the dataset into a training set $(70\%)$ and test set $(30\%)$.
+
+We fit both Linear Discriminant Analysis (LDA) and Quadratic Discriminant Analysis (QDA) models using the same predictors.
+
+To assess and compare the performance of each model, we generate confusion matrices, which summarize the predicted versus actual classifications. These matrices help us identify how well each model distinguishes between the three iris species. 
+
+```{r, warning=FALSE, message=FALSE}
+# Split the data
+set.seed(123)
+train_idx <- sample(seq_len(nrow(iris)), size = 0.7 * nrow(iris))
+iris_train <- iris[train_idx, ]
+iris_test <- iris[-train_idx, ]
+
+# Fit LDA
+lda_model <- lda(Species ~ ., data = iris_train)
+lda_pred <- predict(lda_model, iris_test)
+lda_acc <- mean(lda_pred$class == iris_test$Species)
+
+# Fit QDA
+qda_model <- qda(Species ~ ., data = iris_train)
+qda_pred <- predict(qda_model, iris_test)
+qda_acc <- mean(qda_pred$class == iris_test$Species)
+
+# Make confusion matrices and pront accuracies
+print(table(Predicted = lda_pred$class, Actual = iris_test$Species))
+cat("LDA Accuracy:", lda_acc, "\n\n")
+
+print(table(Predicted = qda_pred$class, Actual = iris_test$Species))
+cat("QDA Accuracy:", qda_acc, "\n")
+```
+
+LDA and QDA produced identical confusion matrices, each misclassifying only one observation. This indicates that both models performed nearly perfectly on the test set and handled the classification task with high accuracy ($= 0.9777778$).
+
+We plot scatterplot of `Petal.Length` vs. `Petal.Width`, colored by species, to visually assess how well the classes are separated in the feature space.
+
+```{r, warning=FALSE, message=FALSE}
+# Scatterplot
+ggplot(iris, aes(x = Petal.Length, y = Petal.Width, color = Species)) +
+  geom_point(size = 2) +
+  ggtitle("Petal Dimensions by Species")
+```
+
+From the scatterplot, we can observe that `setosa` is clearly separated from the other two species, forming a distinct cluster with small petal dimensions. In contrast, `versicolor` and `virginica` show some overlap, particularly in the mid-range of both variables.
+
+This visual pattern aligns with the results from our classification models because the accuracy for both of them is really high.
+
+We visualize the decision boundaries for the LDA and QDA models using `Petal.Length` and `Petal.Width`.
+
+```{r, warning=FALSE, message=FALSE}
+# Decision boundaries for LDA and QDA
+plot_decision_boundary <- function(model, data, xvar, yvar, title) {
+  form <- as.formula(paste("Species ~", xvar, "+", yvar))
+  model <- update(model, formula = form, data = data)
+  grid <- expand.grid(
+    x = seq(min(data[[xvar]]), max(data[[xvar]]), length = 200),
+    y = seq(min(data[[yvar]]), max(data[[yvar]]), length = 200)
+  )
+  colnames(grid) <- c(xvar, yvar)
+  preds <- predict(model, newdata = grid)$class
+  grid$Species <- preds
+
+  ggplot() +
+    geom_tile(data = grid, aes_string(x = xvar, y = yvar, fill = "Species"), alpha = 0.3) +
+    geom_point(data = data, aes_string(x = xvar, y = yvar, color = "Species"), size = 2) +
+    ggtitle(title)
+}
+
+p1 <- plot_decision_boundary(lda_model, iris_train, "Petal.Length", "Petal.Width", "LDA Decision Boundary")
+p2 <- plot_decision_boundary(qda_model, iris_train, "Petal.Length", "Petal.Width", "QDA Decision Boundary")
+grid.arrange(p1, p2, ncol = 2)
+```
+
+From these plots, we observe that both LDA and QDA produce reasonable and interpretable decision boundaries. The difference in the shape of the boundaries directly reflects the underlying modeling assumptions of each method:
+
+- LDA creates linear decision boundaries,
+
+- QDA allows for nonlinear decision boundaries.
+
+In this case, the dataset is already well-structured and mostly linearly separable, so QDA’s additional flexibility does not lead to a significant performance improvement. However, the plots clearly show that QDA can model more complex boundaries, making subtle differences between species visually more apparent.
+
+# Exercise 3
+
+In this exercise, we will use the dataset `BreastCancer` from the `mlbench` package in R. The data contain attributes of cell nuclei derived from digitized images of fine-needle aspirate (FNA) of breast masses.
+
+The dataset includes the following variables (treat them all as numeric):
+
+- **Cl.thickness**: thickness of the clump of cells  
+- **Cell.size**: uniformity of cell size  
+- **Marg.adhesion**: degree of adhesion between cells  
+- **Class**: diagnosis of the mass (`"benign"` or `"malignant"`)
+
+The goal is to classify tumors as `benign` or `malignant` based on cellular characteristics.
+
+1. Fit a logistic regression model to predict `Class` using remaining variables. Summarize the model and interpret the coefficients. What does each suggest about the probability of malignancy?
+
+2. Fit a Naive Bayes model using the same three predictors. Choose a few example observations and compare the predicted class probabilities between the two models.
+
+3. Randomly split the dataset into a training set $(70\%)$ and a test set $(30\%)$. Evaluate both models on the test set by reporting accuracy and computing the AUC.
+
+4. Plot the ROC curves for both models. Which model shows better class separation? Are there differences in sensitivity and specificity?
+
+# Solution
+
+We start by converting all variables except `Class` to numeric because most of them are stored as factors or characters, even though they represent numerical values.
+
+```{r, warning=FALSE, message=FALSE}
+library(mlbench)
+library(e1071)
+library(pROC)
+data(BreastCancer)
+bc <- BreastCancer
+
+# Convert variables to numeric
+for (col in names(bc)[names(bc) != "Class"]) {
+  bc[[col]] <- as.numeric(as.character(bc[[col]]))
+}
+```
+
+We fit a logistic regression model using `Cl.thickness`, `Cell.size` and `Marg.adhesion`.
+
+```{r, warning=FALSE, message=FALSE}
+logit_model <- glm(`Class` ~ Cl.thickness + Cell.size + Marg.adhesion, 
+                   data = bc, family = binomial)
+summary(logit_model)
+```
+
+We see that the intercept is estimated to be $−7.68777$, `Cl.thickness` is $0.66686$,  `Cell.size` is $0.84722$ and `Marg.adhesion` is $0.41163$.
+
+Each predictor has a positive coefficient, indicating that as the value of the feature increases, the likelihood of the tumor being malignant also increases.
+
+All predictors are statistically significant $(p_{value} < 0.001)$, indicating that each variable contributes meaningfully to predicting whether a tumor is malignant. The model suggests that tumors with thicker clumps, more uniform cell sizes, and greater marginal adhesion are more likely to be malignant.
+
+Next, we fit a Naive Bayes model using the same predictors as in the logistic regression model.
+
+```{r, warning=FALSE, message=FALSE}
+nb_model <- naiveBayes(`Class` ~ Cl.thickness + Cell.size + Marg.adhesion, data = bc)
+```
+
+We select the first 5 observations in the dataset and use both models to generate predicted probabilities for the `malignant` class.
+
+```{r, warning=FALSE, message=FALSE}
+# Compare predictions 
+sample_data <- bc[1:5, ]
+logit_probs <- predict(logit_model, sample_data, type = "response")
+nb_probs <- predict(nb_model, sample_data, type = "raw")
+
+comparison <- data.frame(
+  ID = 1:5,
+  Actual = sample_data[["Class"]],
+  Logit_Malignant_Prob = round(logit_probs, 3),
+  NB_Malignant_Prob = round(nb_probs[, "malignant"], 3)
+)
+comparison
+```
+
+Both models agree that *observations 1*, *3* and *5* are very likely benign, as shown by their low probabilities of being malignant.
+
+*Observations 2* and *4*, although actually benign, receive high probabilities of malignancy from both models. This suggests that their features resemble those of malignant cases (possibly borderline or outlier examples).
+
+Naive Bayes tends to give more "extreme" probabilities (very close to $0$ or $1$), which is a known behavior due to its strong independence assumption.
+
+Logistic regression provides smoother probability estimates and may be more interpretable in borderline cases.
+
+This comparison highlights how model assumptions affect probability estimates.
+
+We split the data into a training set $(70\%)$ and a test set $(30\%)$. 
+
+```{r, warning=FALSE, message=FALSE}
+# Randomly splitting the data
+set.seed(123)
+train_idx <- sample(seq_len(nrow(bc)), size = 0.7 * nrow(bc))
+bc_train <- bc[train_idx, ]
+bc_test <- bc[-train_idx, ]
+```
+
+We fit a logistic regression model to the training data. Then, we predict the probabilities of malignancy on the test set.
+
+```{r, warning=FALSE, message=FALSE}
+# Fit logistic regression model on the training set
+logit_model2 <- glm(`Class` ~ Cl.thickness + Cell.size + Marg.adhesion, 
+                    data = bc_train, family = binomial)
+logit_preds <- predict(logit_model2, bc_test, type = "response")
+logit_pred_class <- factor(ifelse(logit_preds > 0.5, "malignant", "benign"), levels = c("benign", "malignant"))
+
+# Calculate accuracy
+logit_acc <- mean(logit_pred_class == bc_test[["Class"]])
+```
+
+We also compute the Area Under the Curve (AUC).
+
+```{r, warning=FALSE, message=FALSE}
+logit_auc <- roc(bc_test[["Class"]], logit_preds, levels = c("benign", "malignant"))$auc
+```
+
+We fit a Naive Bayes model using the same features and training/test split and evaluate it in an analogous manner.
+
+```{r, warning=FALSE, message=FALSE}
+# Fit Naive Bayes model on the training set
+nb_model2 <- naiveBayes(`Class` ~ Cl.thickness + Cell.size + Marg.adhesion, data = bc_train)
+
+# Predict class probabilities and labels on the test set
+nb_probs <- predict(nb_model2, bc_test, type = "raw")
+nb_pred_class <- predict(nb_model2, bc_test)
+
+# Compute accuracy
+nb_acc <- mean(nb_pred_class == bc_test[["Class"]])
+
+# Compute AUC
+nb_auc <- roc(bc_test[["Class"]], nb_probs[, "malignant"], levels = c("benign", "malignant"))$auc
+```
+
+We summarize the classification results for both models.
+
+```{r, warning=FALSE, message=FALSE}
+results <- data.frame(
+  Model = c("Logistic Regression", "Naive Bayes"),
+  Accuracy = c(logit_acc, nb_acc),
+  AUC = c(logit_auc, nb_auc)
+)
+results
+```
+
+We observe that logistic regression slightly outperforms Naive Bayes in both accuracy ($0.9333333$ vs. $0.9238095$) and AUC ($0.9808889$ vs. $0.9788889$). This suggests that logistic regression provides marginally better classification performance and discriminative ability for identifying malignant tumors based on the given features.
+
+To visualize the model performance, we compare their ROC curves.
+
+```{r, warning=FALSE, message=FALSE}
+# Generate ROC curves
+logit_roc <- roc(bc_test[["Class"]], logit_preds)
+nb_roc <- roc(bc_test[["Class"]], nb_probs[, "malignant"])
+
+# Plot ROC curves
+plot(logit_roc, col = "blue", main = "ROC Curves")
+plot(nb_roc, col = "red", add = TRUE)
+legend("bottomright", legend = c("Logistic Regression", "Naive Bayes"),
+       col = c("blue", "red"), lwd = 2)
+```
+
+While both models perform very well, logistic regression shows slightly better class separation. It also appears more stable across thresholds, whereas Naive Bayes may produce more extreme probabilities.
+
+# Exercise 4
+
+In this exercise, we will use the dataset `Sonar` from the `mlbench` package in R. The dataset contains sonar signal returns that have bounced off either a metal cylinder or a rock. The signals are represented by numeric attributes measuring energy in various frequency bands.
+
+The dataset includes the following variables:
+
+- **V1** to **V60**: energy measurements in 60 frequency bands (all numeric)  
+- **Class**: object type (`"M"` for mine, `"R"` for rock) 
+
+The goal is to classify the object type based on the signal profile using logistic regression and k-Nearest Neighbors (kNN) and compare their performance.
+
+1. Fit a logistic regression model to predict `Class` using the first 10 predictors (`V1` to `V10`). Summarize the model output and report the signs of the estimated coefficients. What can you infer about their effect on the probability of detecting a mine?
+
+2. Fit a k-Nearest Neighbors (kNN) classifier with $k = 5$. Use cross-validation (e.g., 10-fold) to evaluate its classification accuracy.
+
+3. Repeat the kNN classification for few values of k, ranging from 1 to 100. Plot the cross-validated test accuracy against $k$. Which value of $k$ gives the best performance?
+
+4. Compare the performance of the best kNN model and the logistic regression model from **Exercise 4.1**. Evaluate both using accuracy and AUC on a held-out $30\%$ test set. Which model performs better?
+
+# Solution 
+
+```{r, warning=FALSE, message=FALSE}
+library(mlbench)
+data(Sonar)
+sonar <- Sonar
+```
+
+We begin by fitting a logistic regression model using the first 10 predictors in the dataset.
+
+```{r, warning=FALSE, message=FALSE}
+# Fit logistic regression (V1 to V10)
+logit_sonar <- glm(`Class` ~ V1 + V2 + V3 + V4 + V5 + V6 + V7 + V8 + V9 + V10,
+                   data = sonar, family = binomial)
+summary(logit_sonar)
+```
+
+The estimated coefficients provide insight into how each frequency band contributes to predicting whether the object is a mine ("M") or rock ("R"):
+
+- Negative coefficients (`V1`, `V2`, `V4`, `V5`, `V9`, `V10`) indicate that higher energy in those frequency bands is associated with a lower probability of the object being a mine.
+
+- Positive coefficients (`V3`, `V6`, `V7`, `V8`) suggest that increased energy in those bands increases the likelihood of the object being a mine.
+
+Among the predictors, only `V4` is statistically significant at the $5\%$ level, meaning it provides meaningful discrimination between classes. The rest, while possibly informative, do not show strong evidence of contributing independently to classification based on this model.
+
+Next, we evaluate kNN classification with $k = 5$ using $10$-fold cross-validation. We scale the predictors and assess average accuracy across folds.
+
+```{r, warning=FALSE, message=FALSE}
+library(class)
+set.seed(123)
+
+# Scale predictors and keep only V1-V10
+x <- scale(sonar[, paste0("V", 1:10)])
+y <- sonar$Class
+
+# kNN with k = 5 and 10-fold Cross-Validation
+folds <- sample(rep(1:10, length.out = nrow(sonar)))
+acc_k5 <- numeric(10)
+
+for (i in 1:10) {
+  test_idx <- which(folds == i)
+  train_idx <- setdiff(seq_len(nrow(sonar)), test_idx)
+  knn_pred <- knn(train = x[train_idx, ], test = x[test_idx, ], cl = y[train_idx], k = 5)
+  acc_k5[i] <- mean(knn_pred == y[test_idx])
+}
+mean(acc_k5)
+```
+
+The resulting average accuracy across the $10$ folds is equal approximately $0.707$, meaning the model correctly classified about $70.7\%$ of observations on average when using $k=5$.
+
+We repeat the CV process for a range of $k$ values and plot the accuracy curve.
+
+```{r, warning=FALSE, message=FALSE}
+# Cross-Validation for multiple k values
+k_vals <- c(1, 3, 5, 7, 9, 10, 15, 20, 30, 40, 50, 60, 80, 100)
+k_acc <- numeric(length(k_vals))
+
+for (j in seq_along(k_vals)) {
+  acc <- numeric(10)
+  for (i in 1:10) {
+    test_idx <- which(folds == i)
+    train_idx <- setdiff(seq_len(nrow(sonar)), test_idx)
+    knn_pred <- knn(train = x[train_idx, ], test = x[test_idx, ], cl = y[train_idx], k = k_vals[j])
+    acc[i] <- mean(knn_pred == y[test_idx])
+  }
+  k_acc[j] <- mean(acc)
+}
+
+plot(k_vals, k_acc, type = "b", xlab = "k", ylab = "Cross-Validated Accuracy",
+     main = "kNN Accuracy vs k")
+```
+
+From the plot, we observe that accuracy tends to fluctuate at lower $k$-values, with the best result around $k=3$.
+As $k$ increases beyond $30$, accuracy gradually declines, especially when $k=100$, where it performs the worst.
+
+We compare the performance of the logistic regression model and the best-performing k-Nearest Neighbors (kNN) model, based on a $70/30$ train-test split.
+
+We fit both models to the training data and evaluate them on the test set using accuracy and AUC.
+
+```{r, warning=FALSE, message=FALSE}
+# Train-test split
+set.seed(123)
+idx <- sample(seq_len(nrow(sonar)), size = 0.7 * nrow(sonar))
+train_data <- sonar[idx, ]
+test_data <- sonar[-idx, ]
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Fit logistic regression model on train set
+logit_test <- glm(`Class` ~ V1 + V2 + V3 + V4 + V5 + V6 + V7 + V8 + V9 + V10,
+                  data = train_data, family = binomial)
+logit_prob <- predict(logit_test, test_data, type = "response")
+logit_pred <- factor(ifelse(logit_prob > 0.5, "R", "M"), levels = c("R", "M"))
+logit_acc <- mean(logit_pred == test_data[["Class"]])
+
+library(pROC)
+logit_auc <- roc(test_data[["Class"]], logit_prob, levels = c("R", "M"))$auc
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Best k from CV
+best_k <- k_vals[which.max(k_acc)]
+x_train <- scale(train_data[, paste0("V", 1:10)])
+x_test <- scale(test_data[, paste0("V", 1:10)])
+y_train <- train_data$Class
+y_test <- test_data$Class
+
+knn_pred <- knn(x_train, x_test, y_train, k = best_k)
+knn_acc <- mean(knn_pred == y_test)
+knn_prob <- as.numeric(knn_pred == "M")
+knn_auc <- roc(y_test, knn_prob, levels = c("R", "M"))$auc
+```
+
+We visualize accuracy and AUC values for both models.
+```{r, warning=FALSE, message=FALSE}
+results <- data.frame(
+  Model = c("Logistic Regression", paste0("kNN (k=", best_k, ")")),
+  Accuracy = c(logit_acc, knn_acc),
+  AUC = c(logit_auc, knn_auc)
+)
+results
+```
+
+We visualize both ROC curves.
+
+```{r, warning=FALSE, message=FALSE}
+logit_roc <- roc(test_data[["Class"]], logit_prob)
+knn_roc <- roc(y_test, knn_prob)
+
+plot(logit_roc, col = "blue", main = "ROC Curves")
+plot(knn_roc, col = "green", add = TRUE)
+legend("bottomright", legend = c("Logistic Regression", paste0("kNN (k=", best_k, ")")),
+       col = c("blue", "green"), lwd = 2)
+```
+
+For both evaluation metrics (accuracy and AUC) kNN model outperforms logistic regression model on the test set.
+
+# Exercise 5 
+In this exercise, we will use a synthetic dataset consisting of two interleaving half-moon shapes, commonly used to benchmark classification algorithms. This type of dataset is especially useful for testing models under non-linear class boundaries.
+
+The dataset includes two numeric variables:
+
+- **X1**, **X2**: coordinates of data points in 2D space  
+- **Label**: class label (e.g., `0` or `1`)
+
+The data should be generated using the following R code, and a fixed seed should be set to ensure reproducibility:
+
+```r
+set.seed(103)
+
+# Generate spiral data
+generate_spirals <- function(n = 400, noise = 0.2) {
+  n_half <- n / 2
+  theta <- seq(0, 4 * pi, length.out = n_half)
+  r <- theta
+  x1 <- cos(theta) * r + rnorm(n_half, sd = noise)
+  y1 <- sin(theta) * r + rnorm(n_half, sd = noise)
+  x2 <- -cos(theta) * r + rnorm(n_half, sd = noise)
+  y2 <- -sin(theta) * r + rnorm(n_half, sd = noise)
+  data.frame(
+    X1 = c(x1, x2),
+    X2 = c(y1, y2),
+    Label = factor(c(rep(0, n_half), rep(1, n_half)))
+  )
+}
+
+data <- generate_spirals()
+```
+The goal is to classify the two classes using several classification algorithms and evaluate their effectiveness.
+
+1. Visualize the dataset and color points by class label. Then, split the dataset into training and test sets ($70/30$ split).
+
+2. Fit a logistic regression model using the training data. Visualize the decision boundary and evaluate how well a linear model captures the complex non-linear pattern.
+
+3. Fit a Linear Discriminant Analysis (LDA) model and a Quadratic Discriminant Analysis (QDA) model using the same training set. Compare their decision boundaries.
+
+4. Fit a Naive Bayes classifier and visualize the resulting decision boundary.
+
+5. Fit k-Nearest Neighbors classifiers with different values of $k$ (e.g., $1, 3, 5, 11, 15, 20$) using the training data. Plot test accuracy as a function of $k$ and determine the value that yields the highest accuracy. Visualize the corresponding decision boundary.
+
+6. Compare all models (logistic regression, LDA, QDA, Naive Bayes and best kNN) based on their performance on the test set. Report both classification accuracy and AUC (Area Under the ROC Curve) for each model.
+
+# Solution
+
+We begin by generating the spiral dataset using the provided function and visualize the structure.
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(MASS)
+library(e1071)
+library(class)
+library(dplyr)
+library(pROC)
+library(gridExtra)
+set.seed(103)
+
+# Spiral data generator
+generate_spirals <- function(n_points = 400, noise = 0.2) {
+  n <- n_points / 2
+  theta <- seq(0, 4 * pi, length.out = n)
+  r <- theta
+  x1 <- cos(theta) * r + rnorm(n, sd = noise)
+  y1 <- sin(theta) * r + rnorm(n, sd = noise)
+  x2 <- -cos(theta) * r + rnorm(n, sd = noise)
+  y2 <- -sin(theta) * r + rnorm(n, sd = noise)
+  data.frame(
+    X1 = c(x1, x2),
+    X2 = c(y1, y2),
+    Label = factor(c(rep(0, n), rep(1, n)))
+  )
+}
+
+data <- generate_spirals()
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Visualize the dataset
+ggplot(data, aes(x = X1, y = X2, color = Label)) +
+  geom_point(alpha = 0.7) +
+  ggtitle("Spiral Dataset")
+```
+
+We split the dataset into a training set $(70\%)$ and test set $(30\%)$.
+
+```{r, warning=FALSE, message=FALSE}
+# Train/test split
+idx <- sample(seq_len(nrow(data)), 0.7 * nrow(data))
+train <- data[idx, ]
+test <- data[-idx, ]
+```
+
+We create the unified function to create decision boundary plots for all models.
+
+```{r, warning=FALSE, message=FALSE}
+# Decision boundary grid
+x_seq <- seq(min(data$X1), max(data$X1), length.out = 100)
+y_seq <- seq(min(data$X2), max(data$X2), length.out = 100)
+grid <- expand.grid(X1 = x_seq, X2 = y_seq)
+
+# Unified plotting function
+plot_model_boundary <- function(model, model_type, title) {
+  if (model_type == "glm") {
+    grid$Label <- as.factor(ifelse(predict(model, newdata = grid, type = "response") > 0.5, 1, 0))
+  } else if (model_type == "knn") {
+    grid$Label <- knn(train[, 1:2], grid[, 1:2], train$Label, k = best_k)
+  } else if (model_type == 'nb') {
+    grid$Label <- predict(model, newdata = grid)
+  } else {
+    grid$Label <- predict(model, newdata = grid)$class
+  }
+  ggplot(grid, aes(X1, X2)) +
+    geom_tile(aes(fill = Label), alpha = 0.3) +
+    geom_point(data = data, aes(color = Label), alpha = 0.6) +
+    ggtitle(title)
+}
+```
+
+We fit a a logistic regression model to the training set and plot the boundaries.
+
+```{r, warning=FALSE, message=FALSE}
+# Fit logistic regression
+logit_model <- glm(Label ~ X1 + X2, data = train, family = binomial)
+
+# Plot boundaries
+plot_model_boundary(logit_model, "glm", "Logistic Regression")
+```
+
+The decision boundary is linear and fails to capture the spiral-shaped distribution of the two classes.
+
+Next, we fit LDA and QDA models to the training set, and visualize their decision boundaries.
+```{r, warning=FALSE, message=FALSE}
+# Fit LDA and QDA
+lda_model <- lda(Label ~ X1 + X2, data = train)
+qda_model <- qda(Label ~ X1 + X2, data = train)
+
+# Plot boundaries
+plot_model_boundary(lda_model, "lda", "LDA")
+plot_model_boundary(qda_model, "qda", "QDA")
+```
+
+LDA, which assumes linear boundaries, struggles to capture the complexity of the spiral pattern. Its decision boundary is almost flat, similar to logistic regression, and therefore performs poorly on this non-linear dataset.
+
+QDA allows for quadratic boundaries and is slightly more flexible than LDA. However, even with this added flexibility, QDA still cannot model the intricate spiral structure well. While it slightly improves over LDA, it still misses many of the curved class transitions.
+
+We fit  a Naive Bayes classifier to the training data and visualize its decision regions.
+
+```{r, warning=FALSE, message=FALSE}
+# Naive Bayes
+nb_model <- naiveBayes(Label ~ X1 + X2, data = train)
+
+# Plot boundaries
+plot_model_boundary(nb_model, "nb", "Naive Bayes")
+```
+
+The decision boundary appears linear and axis-aligned, similar to LDA. The model fails to capture the non-linear spirals, leading to poor separation between classes.
+
+We evaluate the performance of the kNN algorithm across a range of $k$ values.
+
+```{r, warning=FALSE, message=FALSE}
+# kNN accuracy for different k
+k_vals <- c(1, 3, 5, 11, 15, 20)
+k_scores <- sapply(k_vals, function(k) {
+  pred <- knn(train[, 1:2], test[, 1:2], train$Label, k = k) 
+  mean(pred == test$Label)
+})
+
+# Plot accuracy vs. k
+plot(k_vals, k_scores, type = "b", pch = 19, col = "blue",
+     xlab = "k", ylab = "Accuracy", main = "kNN Accuracy vs k")
+```
+
+From the plot, we identify the value of $k$ that yields the highest accuracy.
+
+```{r warning=FALSE, message=FALSE}
+best_k <- k_vals[which.max(k_scores)]
+```
+
+We visualize the decision boundary produced by the best-performing kNN model.
+
+```{r warning=FALSE, message=FALSE}
+plot_model_boundary(NULL, "knn", paste0("kNN (k=", best_k, ")"))
+```
+
+The kNN model with the optimal $k=3$ value is able to flexibly adapt to the complex non-linear class structure of the spiral dataset.
+
+We compared all five classifiers on the held-out $30\%$ test set using accuracy and AUC.
+
+```{r, warning=FALSE, message=FALSE}
+# Evaluation table
+# Ensure test labels are numeric 0/1
+true_labels <- as.numeric(as.character(test$Label))
+
+# Recalculate all predictions and probabilities
+logit_prob <- predict(logit_model, test, type = "response")
+lda_pred_full <- predict(lda_model, test)
+qda_pred_full <- predict(qda_model, test)
+nb_prob_full <- predict(nb_model, test, type = "raw")
+nb_pred <- predict(nb_model, test)
+knn_pred <- knn(train[, 1:2], test[, 1:2], train$Label, k = best_k)
+
+# Extract probabilities (P(Label == 1)) from posterior tables
+lda_prob <- lda_pred_full$posterior[, "1"]
+qda_prob <- qda_pred_full$posterior[, "1"]
+nb_prob <- nb_prob_full[, "1"]
+
+# Build predictions
+logit_pred <- ifelse(logit_prob > 0.5, 1, 0)
+lda_pred <- as.numeric(as.character(lda_pred_full$class))
+qda_pred <- as.numeric(as.character(qda_pred_full$class))
+nb_pred <- as.numeric(as.character(nb_pred))
+knn_pred <- as.numeric(as.character(knn_pred))
+
+# Combine all in one list
+model_results <- list(
+  Logistic = list(pred = logit_pred, prob = logit_prob),
+  LDA = list(pred = lda_pred, prob = lda_prob),
+  QDA = list(pred = qda_pred, prob = qda_prob),
+  NaiveBayes = list(pred = nb_pred, prob = nb_prob),
+  kNN = list(pred = knn_pred, prob = as.numeric(knn_pred == 1))
+)
+
+# Compute accuracy and AUC
+results <- data.frame(Model = character(), Accuracy = numeric(), AUC = numeric())
+for (name in names(model_results)) {
+  pred <- model_results[[name]]$pred
+  prob <- model_results[[name]]$prob
+  acc <- mean(pred == true_labels)
+  auc_score <- auc(roc(true_labels, prob))
+  results <- rbind(results, data.frame(Model = name, Accuracy = acc, AUC = auc_score))
+}
+
+print(results)
+```
+
+Logistic Regression, LDA and Naive Bayes all perform similarly, with moderate accuracy and limited discriminative ability (AUC around $0.59$).
+
+QDA slightly outperforms the other parametric models, likely due to its flexibility in modeling class-specific covariance structures.
+
+kNN delivers perfect performance on the test set, achieving an accuracy and AUC of $1.00$. This reflects its ability to adapt to complex, non-linear decision boundaries, which suits the spiral dataset's structure exceptionally well.
+
+</div>
+
+<div id="py1" class="tab-content">
+
+# Exercise 1
+
+In this exercise, we will use the dataset `PimaIndiansDiabetes` from the `mlbench` package in R. The dataset contains diagnostic measurements for female patients of Pima Indian heritage.
+
+The variables of interests in the dataset:
+
+- **plas**: plasma glucose concentration (glucose tolerance test)  
+- **age**: age (in years)  
+- **mass**: body mass index (BMI)  
+- **diabetes**: test result for diabetes (`"pos"` = positive, `"neg"` = negative)
+
+This dataset can loaded in Python using following code:
+
+```python
+import pandas as pd
+import urllib.request
+
+url = 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv'
+column_names = ['preg', 'plas', 'pres', 'skin', 'test', 'mass', 'pedi', 'age', 'diabetes']
+df = pd.read_csv(url, header=None, names=column_names)
+
+df['diabetes'] = df['diabetes'].map({0: 'neg', 1: 'pos'})
+
+```
+
+The goal is to model and predict diabetes diagnosis based on key clinical predictors.
+
+1. Fit a logistic regression model to predict `diabetes` using `plas` as the predictor. Summarize the model and interpret the coefficient of `plas`.
+
+2. Fit a multiple logistic regression model using `plas`, `age` and `mass` as predictors. Report the coefficient estimates and identify which predictors are statistically significant.
+
+3. Create a histogram of `plas` grouped by `diabetes` status. Does there appear to be a visible difference in `plas` distribution between individuals who tested positive and those who tested negative for `diabetes`?
+
+4. Randomly split the data into a training set $(70\%)$ and a test set $(30\%)$. Use the model from **Exercise 1.2.** to make predictions on the test set. Generate a confusion matrix and report the classification performance, including e.g accuracy, sensitivity and specificity. Plot the ROC curve and compute the AUC for the test predictions.
+
+# Solution
+```{python, warning=FALSE, message=FALSE, echo=FALSE}
+import warnings
+warnings.filterwarnings("ignore")
+```
+
+```{python, warning=FALSE, message=FALSE}
+# Import required libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, roc_curve, roc_auc_score
+from sklearn.datasets import fetch_openml
+import urllib.request
+
+# Load the dataset
+url = 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv'
+column_names = ['preg', 'plas', 'pres', 'skin', 'test', 'mass', 'pedi', 'age', 'diabetes']
+df = pd.read_csv(url, header=None, names=column_names)
+
+# Convert target to string labels for compatibility
+df['diabetes'] = df['diabetes'].map({0: 'neg', 1: 'pos'})
+```
+
+We begin by fitting a logistic regression model to predict the binary outcome variable `diabetes` using `plas`. Logistic regression is an appropriate method for this task because the response variable is binary, indicating either a *positive* or *negative* diabetes diagnosis.
+
+In Python, this model is specified using the `LogisticRegression()` function.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit a logistic regression model using plas
+model1 = LogisticRegression()
+X1 = df[['plas']]
+y = df['diabetes']
+model1.fit(X1, y);
+
+print("Intercept:", model1.intercept_)
+print("Coefficient:", model1.coef_)
+```
+
+The coefficient of `plas`, which is approximately equal to $0.0379$, indicates that each 1-unit increase in glucose level is associated with an increase of $0.0379$ in the log-odds of having diabetes.
+
+To extend the analysis, we fit a multiple logistic regression model using `plas`, `age` and `mass` as predictors.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit a logistic regression model using plas, age and mass
+X2 = df[['plas', 'age', 'mass']]
+model2 = LogisticRegression()
+model2.fit(X2, y);
+
+print("Intercept:", model2.intercept_)
+print("Coefficients:", model2.coef_)
+```
+
+For this model, the estimated coefficient for `plas` is $\approx 0.0325$, for `age` is $\approx 0.0302$ and for `mass` is $\approx 0.0816$. All three predictors have positive coefficients and are statistically significant, indicating that increases in `plas` levels, `age` and body `mass` index are each associated with a higher probability of a positive diabetes diagnosis.
+
+Next, we plot the histogram to visualize glucose distribution for diabetic vs non-diabetic patients.
+
+```{python, warning=FALSE, message=FALSE}
+# Plot histogram 
+sns.histplot(data=df, x='plas', hue='diabetes', kde=False, element='step', stat='count', common_norm=False, bins=30, alpha=0.5)
+plt.xlabel('plas')
+plt.ylabel('Count')
+plt.title('Glucose Distribution by Diabetes Status')
+plt.show()
+```
+
+We can observe that individuals with positive diabetes diagnoses tend to have higher glucose values, while those who tested negative are more concentrated in the lower glucose range. This pattern supports the results from the logistic regression model that glucose is a strong predictor of diabetes.
+
+Next, we evaluate how well the logistic regression model generalizes to unseen data. To do this, we divide the data into **training set** (to fit the model) and **test set** (to assess performance) in a $7:3$ ratio.
+
+We then use the model from **Exercise 1.2** to assess how well it predicts the diabetes outcome on the test set.
+
+```{python, warning=FALSE, message=FALSE}
+# Set a random seed to ensure results are reproducible
+np.random.seed(123)
+
+# Create a partition: 70% training and 30% testing
+X = df[['plas', 'age', 'mass']]
+y = df['diabetes']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123, stratify=y)
+
+model2_test = LogisticRegression()
+model2_test.fit(X_train, y_train);
+
+probs = model2_test.predict_proba(X_test)[:, 1]
+preds = np.where(probs > 0.5, 'pos', 'neg')
+
+cm = confusion_matrix(y_test, preds, labels=['neg', 'pos'])
+ConfusionMatrixDisplay(cm, display_labels=['Negative', 'Positive']).plot();
+plt.title('Confusion Matrix');
+plt.show()
+```
+
+From confusion matrix we see the following quantities:
+
+- **True Positives** ($TP$): correctly predicted positive cases,
+- **True Negatives** ($TN$): correctly predicted negative cases,
+- **False Positives** ($FP$): predicted positive when actually negative,
+- **False Negatives** ($FN$): predicted negative when actually positive.
+
+Using these, we calculate standard performance metrics:
+
+- **Accuracy** - proportion of total predictions that are correct,
+- **Sensitivity** $\frac{TP}{TP+FN}$ - ability to correctly identify positive cases,
+- **Specificity** $\frac{TN}{TN+FP}$ - ability to correctly identify negative cases.
+
+```{python, warning=FALSE, message=FALSE}
+TP = cm[1,1]
+TN = cm[0,0]
+FP = cm[0,1]
+FN = cm[1,0]
+
+accuracy = (TP + TN) / (TP + TN + FP + FN)
+sensitivity = TP / (TP + FN)
+specificity = TN / (TN + FP)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Sensitivity: {sensitivity:.4f}")
+print(f"Specificity: {specificity:.4f}")
+```
+
+In our case, the Accuracy is $74.46\%$ which means that the model correctly classifies about three-quarters of all cases, the Sensitivity is $50.62\%$ which means that among people without diabetes, $50.62\%$ are correctly identified and Specificity is $87.33\%$ which means that among people with diabetes, $87.33\%$ are correctly identified.
+
+To evaluate how well the model performs across all classification thresholds, we plot the **ROC (Receiver Operating Characteristic)** curve. This curve shows how Sensitivity and (1 − Specificity) vary as we adjust the threshold for classifying a case as positive.
+
+The **Area Under the Curve (AUC)** gives us a single measure of model performance:
+
+- AUC close to **1.0** indicates excellent class separation
+- AUC near **0.5** suggests no better than random guessing
+
+```{python, warning=FALSE, message=FALSE}
+fpr, tpr, thresholds = roc_curve(y_test.map({'neg': 0, 'pos': 1}), probs)
+auc_score = roc_auc_score(y_test.map({'neg': 0, 'pos': 1}), probs)
+
+plt.plot(fpr, tpr, label=f"AUC = {auc_score:.4f}")
+plt.plot([0, 1], [0, 1], linestyle='--', color='grey')
+plt.xlabel('1 - Specificity (FPR)')
+plt.ylabel('Sensitivity (TPR)')
+plt.title('ROC Curve')
+plt.legend()
+plt.show()
+```
+
+In our model, the AUC is $0.8339$, which indicates strong discriminative ability. This confirms that the model performs well in distinguishing between diabetic and non-diabetic individuals.
+
+# Exercise 2
+
+In this exercise, we will use the `iris` dataset, which contains measurements of sepal and petal dimensions for three iris flower species.
+
+The dataset includes the following variables:
+
+- **sepal length**: length of the sepal (cm)  
+- **sepal width**: width of the sepal (cm)  
+- **petal length**: length of the petal (cm)  
+- **petal width**: width of the petal (cm)  
+- **Species**: species of iris (`setosa`, `versicolor`, or `virginica`)
+
+This dataset can be loaded in python using following code:
+
+```python
+import pandas as pd
+from sklearn.datasets import load_iris
+
+iris = load_iris()
+X = pd.DataFrame(iris.data, columns=iris.feature_names)
+y = pd.Series(iris.target, name="Species")
+
+```
+The goal is to classify the species of an iris flower based on its physical measurements using multiple classification methods.
+
+1. Fit a multinomial logistic regression model to predict `Species` using all four features. Summarize the model and report the estimated coefficients for each class.
+
+2. Fit a Linear Discriminant Analysis (LDA) model and a Quadratic Discriminant Analysis (QDA) model using the same predictors as in **Exercise 2.1**. Compare their confusion matrices and classification accuracy on a held-out $30\%$ test set. Which model performed better on the test set? 
+
+3. Create a scatterplot of `petal length` vs. `petal width`, coloring the points by species. Does the visual separation reflect what is captured by the models?
+
+4. Plot decision boundaries for both the LDA and QDA models using `petal length` and `petal width`. Do the boundaries reflect linear or nonlinear separations?
+
+## Solution 
+
+```{python, warning=FALSE, message=FALSE}
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+from sklearn.linear_model import LogisticRegression
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+from matplotlib.colors import ListedColormap
+import numpy as np
+
+# Load iris dataset
+iris = load_iris()
+X = pd.DataFrame(iris.data, columns=iris.feature_names)
+y = pd.Series(iris.target, name="Species")
+```
+
+We begin by fitting a multinomial logistic regression model, which allows us to model a categorical outcome with more than two classes. In our case, the outcome variable `Species` has three clasess (`setosa`, `versicolor` and `virginica`). 
+
+To fit this model in Python, we use the `LogisticRegression()` function from the `sklearn` package with `multi_class` parameter set to `multinomial`. This setting fits one binary logistic regression model per class, comparing each class against all others.
+
+The model estimates, for each species, how the predictor variables (sepal and petal measurements) affect the log-odds of belonging to that species versus not belonging to it. Although this formulation slightly overparametrizes the model, it avoids requiring the selection of a baseline reference class.
+
+Each coefficient reflects the effect of a one-unit increase in the corresponding predictor on the log-odds of the observation being classified into the given species.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit multinomial logistic regression
+logit = LogisticRegression(multi_class="multinomial")
+logit.fit(X, y);
+coefs = pd.DataFrame(logit.coef_, columns=X.columns)
+coefs["Class"] = iris.target_names
+with pd.option_context('display.max_columns', None):
+    print(coefs.set_index("Class"))
+```
+
+For instance, we can conclude that a one-unit increase in `sepal length` decreases the log-odds of being `versicolor` (vs. others) by $0.179175$.
+
+Next, we split the dataset into a training set $(70\%)$ and test set $(30\%)$.
+
+We fit both Linear Discriminant Analysis (LDA) and Quadratic Discriminant Analysis (QDA) models using the same predictors.
+
+To assess and compare the performance of each model, we generate confusion matrices, which summarize the predicted versus actual classifications. These matrices help us identify how well each model distinguishes between the three iris species.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit LDA and QDA with train/test evaluation
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123)
+
+lda = LinearDiscriminantAnalysis()
+qda = QuadraticDiscriminantAnalysis()
+lda.fit(X_train, y_train);
+qda.fit(X_train, y_train);
+
+lda_preds = lda.predict(X_test)
+qda_preds = qda.predict(X_test)
+
+print(confusion_matrix(y_test, lda_preds))
+print("LDA Accuracy:", accuracy_score(y_test, lda_preds))
+
+print(confusion_matrix(y_test, qda_preds))
+print("QDA Accuracy:", accuracy_score(y_test, qda_preds))
+```
+
+LDA and QDA produced identical confusion matrices, each misclassifying only one observation. This indicates that both models performed nearly perfectly on the test set and handled the classification task with high accuracy ($\approx 0.9778$).
+
+We plot scatterplot of `petal length` vs. `petal width`, colored by species, to visually assess how well the classes are separated in the feature space.
+
+```{python, warning=FALSE, message=FALSE}
+# Scatterplot of Petal.Length vs Petal.Width
+sns.scatterplot(x=X["petal length (cm)"], y=X["petal width (cm)"], hue=iris.target_names[y]);
+plt.title("Petal Dimensions by Species");
+plt.xlabel("petal length (cm)");
+plt.ylabel("petal width (cm)");
+plt.show()
+```
+
+From the scatterplot, we can observe that `setosa` is clearly separated from the other two species, forming a distinct cluster with small petal dimensions. In contrast, `versicolor` and `virginica` show some overlap, particularly in the mid-range of both variables.
+
+This visual pattern aligns with the results from our classification models because the accuracy for both of them is really high.
+
+We visualize the decision boundaries for the LDA and QDA models using `petal length` and `petal width`.
+
+```{python, warning=FALSE, message=FALSE}
+# Decision boundaries for LDA and QDA using Petal Length and Width
+X2 = X[["petal length (cm)", "petal width (cm)"]].values
+y2 = y.values
+X2_train, X2_test, y2_train, y2_test = train_test_split(X2, y2, test_size=0.3, random_state=123)
+
+lda2 = LinearDiscriminantAnalysis().fit(X2_train, y2_train);
+qda2 = QuadraticDiscriminantAnalysis().fit(X2_train, y2_train);
+
+models = [(lda2, "LDA"), (qda2, "QDA")]
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+colors = ListedColormap(["#FFAAAA", "#AAFFAA", "#AAAAFF"])
+
+for ax, (model, title) in zip(axes, models):
+    x_min, x_max = X2[:, 0].min() - 1, X2[:, 0].max() + 1
+    y_min, y_max = X2[:, 1].min() - 1, X2[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.02),
+                         np.arange(y_min, y_max, 0.02))
+    Z = model.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+    ax.contourf(xx, yy, Z, cmap=colors, alpha=0.5)
+    sns.scatterplot(x=X2[:, 0], y=X2[:, 1], hue=iris.target_names[y2], palette="Set1", ax=ax, legend=False)
+    ax.set_title(f"Decision Boundary: {title}")
+    ax.set_xlabel("petal length (cm)")
+    ax.set_ylabel("petal width (cm)")
+
+plt.tight_layout()
+plt.show()
+```
+
+From these plots, we observe that both LDA and QDA produce reasonable and interpretable decision boundaries. The difference in the shape of the boundaries directly reflects the underlying modeling assumptions of each method:
+
+- LDA creates linear decision boundaries,
+
+- QDA allows for nonlinear decision boundaries.
+
+In this case, the dataset is already well-structured and mostly linearly separable, so QDA’s additional flexibility does not lead to a significant performance improvement. However, the plots clearly show that QDA can model more complex boundaries, making subtle differences between species visually more apparent.
+
+# Exercise 3
+
+In this exercise, we will use the dataset `BreastCancer` from the `sklearn` package in Python. The data contain attributes of cell nuclei derived from digitized images of fine-needle aspirate (FNA) of breast masses.
+
+The dataset includes the following variables (treat them all as numeric):
+
+- **mean radius**: thickness of the clump of cells  
+- **mean texture**: uniformity of cell size  
+- **mean smoothness**: degree of adhesion between cells  
+- **Class**: diagnosis of the mass (`benign` or `malignant`)
+
+The goal is to classify tumors as `benign` or `malignant` based on cellular characteristics. Load the dataset using following code:
+
+```python
+import pandas as pd
+from sklearn.datasets import load_breast_cancer
+
+raw = load_breast_cancer()
+bc_df = pd.DataFrame(raw.data, columns=raw.feature_names)
+bc_df['Class'] = raw.target  # 0 = malignant, 1 = benign
+```
+
+1. Fit a logistic regression model using `LogisticRegression()` function to predict `Class` using remaining variables. Summarize the model and interpret the coefficients. What does each suggest about the probability of malignancy?
+
+2. Fit a Naive Bayes model using the same three predictors, using `GaussianNB()` function. Choose a few example observations and compare the predicted class probabilities between the two models.
+
+3. Randomly split the dataset into a training set (70%) and a test set (30%). Evaluate both models on the test set by reporting accuracy and computing the AUC.
+
+4. Plot the ROC curves for both models. Which model shows better class separation? Are there differences in sensitivity and specificity?
+
+# Solution
+
+```{python, warning=FALSE, message=FALSE}
+# Load data
+import pandas as pd
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load and convert to DataFrame
+raw = load_breast_cancer()
+bc_df = pd.DataFrame(raw.data, columns=raw.feature_names)
+bc_df['Class'] = raw.target  # 0 = malignant, 1 = benign
+
+# Use 3 selected features features for classification
+features = ['mean radius', 'mean texture', 'mean smoothness']
+X = bc_df[features].values
+y = bc_df['Class'].values
+```
+
+We fit a logistic regression model using `mean radius`, `mean texture` and `mean smoothness`.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit logistic regression
+logit = LogisticRegression()
+logit.fit(X, y);
+coeffs = pd.DataFrame({
+    "Feature": ["mean radius", "mean texture", "mean smoothness"],
+    "Coefficient": logit.coef_[0]
+})
+coeffs
+```
+
+We see that `mean radius` is $-1.045011$,  `mean texture` is $-0.217144$ and `mean smoothness` is $-0.870927$.
+
+Each predictor has a negative coefficient, indicating that as the value of the feature inceases, the likelihood of the tumor being benign decreases.
+
+The model suggests that tumors with thicker clumps, more uniform cell sizes, and greater marginal adhesion are more likely to be malignant.
+
+Next, we fit a Naive Bayes model using the same predictors as in the logistic regression model. 
+
+```{python, warning=FALSE, message=FALSE}
+# Fit Naive Bayes
+nb = GaussianNB()
+```
+
+We select the first 5 observations in the dataset and use both models to generate predicted probabilities for the `malignant` class.
+
+```{python, warning=FALSE, message=FALSE}
+# Naive Bayes vs Logistic regression: sample prediction
+bc_sample = X[:5]
+nb.fit(X, y);
+logit_probs = logit.predict_proba(bc_sample)[:, 1]
+nb_probs = nb.predict_proba(bc_sample)[:, 1]
+
+comparison = pd.DataFrame({
+    "Logit_Prob": logit_probs,
+    "NB_Prob": nb_probs,
+    "Actual_Class": y[:5]
+})
+comparison
+```
+
+Both models agree that *observations 1*, *2*, *3* and *5* are very likely malignant, as shown by their low probabilities of being malignant.
+
+*Observation 4*, although actually malignant, receive high probabilities of being beign from both models. This suggests that their features resemble those of beign cases (possibly borderline or outlier examples).
+
+We split the data into a training set $(70\%)$ and a test set $(30\%)$. We fit a logistic regression and Naive Bayes models to the training data. Then, we predict the probabilities of malignancy on the test set. We also compute the Area Under the Curve (AUC).
+
+```{python, warning=FALSE, message=FALSE}
+# Train/Test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123)
+
+logit.fit(X_train, y_train);
+nb.fit(X_train, y_train);
+
+logit_preds = logit.predict(X_test)
+logit_probs = logit.predict_proba(X_test)[:, 1]
+nb_preds = nb.predict(X_test)
+nb_probs = nb.predict_proba(X_test)[:, 1]
+
+logit_acc = accuracy_score(y_test, logit_preds)
+nb_acc = accuracy_score(y_test, nb_preds)
+logit_auc = roc_auc_score(y_test, logit_probs)
+nb_auc = roc_auc_score(y_test, nb_probs)
+```
+
+We summarize the classification results for both models.
+
+```{python, warning=FALSE, message=FALSE}
+results = pd.DataFrame({
+    "Model": ["Logistic Regression", "Naive Bayes"],
+    "Accuracy": [logit_acc, nb_acc],
+    "AUC": [logit_auc, nb_auc]
+})
+results
+```
+
+We observe that Naive Bayes slightly outperforms logistic regressionin both accuracy ($0.877193$ vs. $0.906433$) and AUC ($0.952313$ vs. $0.980583$). This suggests that Naive Bayes provides marginally better classification performance and discriminative ability for identifying malignant tumors based on the given features.
+
+To visualize the model performance, we compare their ROC curves.
+
+```{python, warning=FALSE, message=FALSE}
+#  ROC curves
+fpr_logit, tpr_logit, _ = roc_curve(y_test, logit_probs)
+fpr_nb, tpr_nb, _ = roc_curve(y_test, nb_probs)
+
+plt.plot(fpr_logit, tpr_logit, label="Logistic", color="blue");
+plt.plot(fpr_nb, tpr_nb, label="Naive Bayes", color="red");
+plt.plot([0, 1], [0, 1], linestyle="--", color="gray");
+plt.xlabel("False Positive Rate");
+plt.ylabel("True Positive Rate");
+plt.title("ROC Curves");
+plt.legend();
+plt.grid(True);
+plt.show()
+```
+
+While both models perform very well, Naive Bayes shows slightly better class separation.
+
+# Exercise 4
+
+In this exercise, we will use the dataset `Sonar` from the `mlbench` package in R. The dataset contains sonar signal returns that have bounced off either a metal cylinder or a rock. The signals are represented by numeric attributes measuring energy in various frequency bands.
+
+The dataset includes the following variables:
+
+- **V1** to **V60**: energy measurements in 60 frequency bands (all numeric)  
+- **Class**: object type (`M` for mine, `R` for rock)
+
+You can load this dataset in `python` using following code:
+
+```python
+import pandas as pd
+
+url = "https://archive.ics.uci.edu/ml/machine-learning-databases/undocumented/connectionist-bench/sonar/sonar.all-data"
+sonar_df = pd.read_csv(url, header=None)
+sonar_df.columns = [f"V{i+1}" for i in range(60)] + ["Class"]
+
+# Encode class labels
+sonar_df["Class"] = LabelEncoder().fit_transform(sonar_df["Class"])  # M=1, R=0
+```
+
+The goal is to classify the object type based on the signal profile using logistic regression and k-Nearest Neighbors (kNN) and compare their performance.
+
+1. Fit a logistic regression model to predict `Class` using the first 10 predictors (`V1` to `V10`). Summarize the model output and report the signs of the estimated coefficients. What can you infer about their effect on the probability of detecting a mine?
+
+2. Fit a k-Nearest Neighbors (kNN) classifier with $k = 5$. Use cross-validation (e.g., 10-fold) to evaluate its classification accuracy.
+
+3. Repeat the kNN classification for few values of k, ranging from 1 to 100. Plot the cross-validated test accuracy against $k$. Which value of $k$ gives the best performance?
+
+4. Compare the performance of the best kNN model and the logistic regression model from **Exercise 4.1**. Evaluate both using accuracy and AUC on a held-out $30\%$ test set. Which model performs better?
+
+## Solution 
+
+```{python, warning=FALSE, message=FALSE, echo=FALSE}
+import warnings
+warnings.filterwarnings("ignore")
+```
+
+```{python, warning=FALSE, message=FALSE}
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load sonar dataset from UCI repository
+url = "https://archive.ics.uci.edu/ml/machine-learning-databases/undocumented/connectionist-bench/sonar/sonar.all-data"
+sonar_df = pd.read_csv(url, header=None)
+sonar_df.columns = [f"V{i+1}" for i in range(60)] + ["Class"]
+
+# Encode class labels
+sonar_df["Class"] = LabelEncoder().fit_transform(sonar_df["Class"])  # M=1, R=0
+
+X = sonar_df.iloc[:, :10].values  # first 10 predictors
+y = sonar_df["Class"].values
+```
+
+We begin by fitting a logistic regression model using the first 10 predictors in the dataset.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit logistic regression (V1 to V10)
+logit = LogisticRegression()
+logit.fit(X, y);
+coeffs = pd.DataFrame({
+    "Feature": [f"V{i+1}" for i in range(10)],
+    "Coefficient": logit.coef_[0]
+})
+print(coeffs)
+```
+
+All coefficients are negative. They indicate that higher energy in those frequency bands is associated with a lower probability of the object being a rock.
+
+Next, we evaluate kNN classification with $k = 5$ using $10$-fold cross-validation.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit kNN with k=5, 10-fold CV
+knn5 = KNeighborsClassifier(n_neighbors=5)
+k5_scores = cross_val_score(knn5, X, y, cv=10);
+print(f"kNN (k=5) Mean Accuracy: {k5_scores.mean():.3f}")
+```
+
+The resulting average accuracy across the $10$ folds is equal $0.701$, meaning the model correctly classified about $70.1\%$ of observations on average when using $k=5$.
+
+We repeat the CV process for a range of $k$ values and plot the accuracy curve.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit kNN for multiple k values
+k_vals = [1, 3, 5, 7, 9, 10, 15, 20, 30, 40, 50, 60, 80, 100]
+k_scores = []
+
+for k in k_vals:
+    knn = KNeighborsClassifier(n_neighbors=k)
+    scores = cross_val_score(knn, X, y, cv=10)
+    k_scores.append(scores.mean())
+
+plt.plot(k_vals, k_scores, marker="o");
+plt.xlabel("k");
+plt.ylabel("CV Accuracy");
+plt.title("kNN Accuracy vs k");
+plt.grid(True)
+plt.show()
+best_k = k_vals[np.argmax(k_scores)]
+```
+
+From the plot, we observe that the best accuracy is reached around $k=50$.
+
+We compare the performance of the logistic regression model and the best-performing k-Nearest Neighbors (kNN) model, based on a $70/30$ train-test split.
+
+We fit both models to the training data and evaluate them on the test set using accuracy and AUC.
+
+```{python, warning=FALSE, message=FALSE}
+# Train/test performance
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123)
+
+logit.fit(X_train, y_train);
+logit_probs = logit.predict_proba(X_test)[:, 1]
+logit_preds = logit.predict(X_test)
+logit_acc = accuracy_score(y_test, logit_preds)
+logit_auc = roc_auc_score(y_test, logit_probs)
+
+knn = KNeighborsClassifier(n_neighbors=best_k)
+knn.fit(X_train, y_train);
+knn_preds = knn.predict(X_test)
+knn_prob = knn.predict_proba(X_test)[:, 1]
+knn_acc = accuracy_score(y_test, knn_preds)
+knn_auc = roc_auc_score(y_test, knn_prob)
+```
+
+We visualize accuracy and AUC values for both models.
+
+```{python, warning=FALSE, message=FALSE}
+results = pd.DataFrame({
+    "Model": ["Logistic Regression", f"kNN (k={best_k})"],
+    "Accuracy": [logit_acc, knn_acc],
+    "AUC": [logit_auc, knn_auc]
+})
+print(results)
+```
+
+We visualize both ROC curves.
+
+```{python, warning=FALSE, message=FALSE}
+# ROC curves
+fpr_logit, tpr_logit, _ = roc_curve(y_test, logit_probs)
+fpr_knn, tpr_knn, _ = roc_curve(y_test, knn_prob)
+
+plt.plot(fpr_logit, tpr_logit, label="Logistic", color="blue");
+plt.plot(fpr_knn, tpr_knn, label=f"kNN (k={best_k})", color="green");
+plt.plot([0, 1], [0, 1], linestyle="--", color="gray");
+plt.xlabel("False Positive Rate");
+plt.ylabel("True Positive Rate");
+plt.title("ROC Curves");
+plt.legend();
+plt.grid(True)
+plt.show()
+```
+
+There are no apparent differences so both models are equally good.
+
+# Exercise 5 
+
+In this exercise, we will use a synthetic dataset consisting of two interleaving half-moon shapes, commonly used to benchmark classification algorithms. This type of dataset is especially useful for testing models under non-linear class boundaries.
+
+The dataset includes two numeric variables:
+
+- **X1**, **X2**: coordinates of data points in 2D space  
+- **Label**: class label (e.g., `0` or `1`)
+
+The data should be generated using the following `python` code. A fixed seed should be set to ensure reproducibility:
+
+```python
+
+import pandas as pd
+
+set.seed(123)
+
+generate_half_moons <- function(n = 200, noise = 0.1, radius = 1, width = 0.5) {
+  theta1 <- runif(n, 0, pi)
+  x1 <- radius * cos(theta1) + runif(n, -noise, noise)
+  y1 <- radius * sin(theta1) + runif(n, -noise, noise)
+  class1 <- rep(0, n)
+
+  theta2 <- runif(n, 0, pi)
+  x2 <- radius * cos(theta2) + radius + runif(n, -noise, noise)
+  y2 <- -radius * sin(theta2) - width + runif(n, -noise, noise)
+  class2 <- rep(1, n)
+
+  data.frame(X1 = c(x1, x2), X2 = c(y1, y2), Label = as.factor(c(class1, class2)))
+}
+
+moon_data <- generate_half_moons(n = 200, noise = 0.1)
+```
+
+The goal is to classify the two classes using several classification algorithms and evaluate their effectiveness.
+
+1. Visualize the dataset and color points by class label. Split the dataset into training and test sets (70/30 split).
+
+2. Fit a logistic regression model using the training data. Visualize the decision boundary and evaluate how well a linear model captures the complex non-linear pattern.
+
+3. Fit a Linear Discriminant Analysis (LDA) model and a Quadratic Discriminant Analysis (QDA) model using the same training set. Compare their decision boundaries.
+
+4. Fit a Naive Bayes classifier and visualize the resulting decision boundary.
+
+5. Fit k-Nearest Neighbors classifiers with different values of $k$ (e.g., $1, 3, 5, 11, 15, 20$) using the training data. Plot test accuracy as a function of $k$ and determine the value that yields the highest accuracy. Visualize the corresponding decision boundary.
+
+6. Compare all models (logistic regression, LDA, QDA, Naive Bayes and best kNN) based on their performance on the test set. Report both classification accuracy and AUC (Area Under the ROC Curve) for each model.
+
+
+## Solution
+
+```{python, warning=FALSE, message=FALSE, echo=FALSE}
+import warnings
+warnings.filterwarnings("ignore")
+```
+
+We begin by generating the spiral dataset using the provided function and visualize the structure.
+
+```{python, warning=FALSE, message=FALSE}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LogisticRegression
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, confusion_matrix
+from matplotlib.colors import ListedColormap
+
+# Generate spiral dataset
+np.random.seed(123)
+def generate_spirals(n_points=400, noise=0.2):
+    n = n_points // 2
+    theta = np.linspace(0, 4 * np.pi, n)
+    r = theta
+    x1 = np.cos(theta) * r + np.random.randn(n) * noise
+    y1 = np.sin(theta) * r + np.random.randn(n) * noise
+
+    x2 = -np.cos(theta) * r + np.random.randn(n) * noise
+    y2 = -np.sin(theta) * r + np.random.randn(n) * noise
+
+    X = np.vstack((np.column_stack((x1, y1)), np.column_stack((x2, y2))))
+    y = np.array([0] * n + [1] * n)
+    return X, y
+
+X, y = generate_spirals()
+data = pd.DataFrame(X, columns=["X1", "X2"])
+data['Label'] = y
+```
+
+```{python, warning=FALSE, message=FALSE}
+# Visualize the dataset
+sns.scatterplot(data=data, x="X1", y="X2", hue="Label", palette="Set1");
+plt.title("Spiral Dataset");
+plt.show()
+```
+
+We create the unified function to create decision boundary plots for all models.
+
+```{python, warning=FALSE, message=FALSE}
+# Helper to plot decision boundary, you can plot separately each time
+def plot_boundary(model, X, y, title):
+    h = 0.1
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                         np.arange(y_min, y_max, h))
+    Z = model.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+    plt.contourf(xx, yy, Z, cmap=ListedColormap(['#FFAAAA', '#AAAAFF']), alpha=0.5);
+    sns.scatterplot(x=X[:, 0], y=X[:, 1], hue=y, palette="Set1", alpha=0.6);
+    plt.title(title);
+    plt.show()
+```
+
+We split the dataset into a training set $(70\%)$ and test set $(30\%)$.
+
+```{python, warning=FALSE, message=FALSE}
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123)
+```
+
+We fit a a logistic regression model to the training set and plot the boundaries.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit logistic regression model
+logit = LogisticRegression()
+logit.fit(X_train, y_train);
+plot_boundary(logit, X, y, "Logistic Regression")
+```
+
+The decision boundary is linear and fails to capture the spiral-shaped distribution of the two classes.
+
+Next, we fit LDA and QDA models to the training set, and visualize their decision boundaries.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit LDA and QDA models
+lda = LinearDiscriminantAnalysis()
+qda = QuadraticDiscriminantAnalysis()
+lda.fit(X_train, y_train);
+qda.fit(X_train, y_train);
+plot_boundary(lda, X, y, "LDA")
+plot_boundary(qda, X, y, "QDA")
+```
+
+LDA, which assumes linear boundaries, struggles to capture the complexity of the spiral pattern. Its decision boundary is almost flat, similar to logistic regression, and therefore performs poorly on this non-linear dataset.
+
+QDA allows for quadratic boundaries and is slightly more flexible than LDA. However, even with this added flexibility, QDA still cannot model the intricate spiral structure well. While it slightly improves over LDA, it still misses many of the curved class transitions.
+
+We fit a Naive Bayes classifier to the training data and visualize its decision regions.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit Naive Bayes model
+nb = GaussianNB()
+nb.fit(X_train, y_train);
+plot_boundary(nb, X, y, "Naive Bayes")
+```
+
+The decision boundary appears linear and axis-aligned, similar to LDA. The model fails to capture the non-linear spirals, leading to poor separation between classes.
+
+We evaluate the performance of the kNN algorithm across a range of $k$ values.
+
+```{python, warning=FALSE, message=FALSE}
+# Fit kNN for multiple k
+k_vals = [1, 3, 5, 11, 15, 20]
+k_scores = []
+
+for k in k_vals:
+    knn = KNeighborsClassifier(n_neighbors=k)
+    acc = cross_val_score(knn, X, y, cv=10).mean()
+    k_scores.append(acc)
+
+plt.plot(k_vals, k_scores, marker='o');
+plt.xlabel("k");
+plt.ylabel("Cross-validated Accuracy");
+plt.title("kNN Accuracy vs k");
+plt.grid(True)
+plt.show()
+```
+
+From the plot, we identify the value of $k$ that yields the highest accuracy.
+
+```{python, warning=FALSE, message=FALSE}
+best_k = k_vals[np.argmax(k_scores)]
+```
+
+The kNN model with the optimal $k=1$ value is able to flexibly adapt to the complex non-linear class structure of the spiral dataset.
+
+```{python, warning=FALSE, message=FALSE}
+# Plot all decision boundaries for different k
+fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+from matplotlib.colors import ListedColormap
+
+for ax, k in zip(axes.flat, k_vals):
+    knn_k = KNeighborsClassifier(n_neighbors=k)
+    knn_k.fit(X_train, y_train);
+
+    h = 0.1
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                         np.arange(y_min, y_max, h))
+    Z = knn_k.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+
+    ax.contourf(xx, yy, Z, cmap=ListedColormap(['#FFAAAA', '#AAAAFF']), alpha=0.5);
+    sns.scatterplot(x=X[:, 0], y=X[:, 1], hue=y, palette="Set1", ax=ax, legend=False, alpha=0.6);
+    ax.set_title(f"kNN k={k}");
+
+plt.tight_layout()
+plt.show()
+```
+
+From the plot, we identify the value of $k$ that yields the highest accuracy.
+
+The kNN model with the optimal $k=1$ value is able to flexibly adapt to the complex non-linear class structure of the spiral dataset.
+
+We compared all five classifiers on the held-out $30\%$ test set using accuracy and AUC.
+
+```{python, warning=FALSE, message=FALSE}
+# Final model comparison
+knn = KNeighborsClassifier(n_neighbors=best_k)
+models = {
+    "Logistic": logit,
+    "LDA": lda,
+    "QDA": qda,
+    "Naive Bayes": nb,
+    f"kNN (k={best_k})": knn
+}
+
+results = []
+for name, model in models.items():
+    model.fit(X_train, y_train);
+    pred = model.predict(X_test);
+    prob = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else pred;
+    acc = accuracy_score(y_test, pred);
+    auc = roc_auc_score(y_test, prob);
+    cm = confusion_matrix(y_test, pred);
+    results.append((name, acc, auc, cm));
+
+summary = pd.DataFrame([(r[0], r[1], r[2]) for r in results], columns=["Model", "Accuracy", "AUC"])
+print(summary)
+```
+
+Logistic Regression, LDA and Naive Bayes all perform similarly, with moderate accuracy and limited discriminative ability (AUC around $0.59$).
+
+QDA slightly outperforms the other parametric models, likely due to its flexibility in modeling class-specific covariance structures.
+
+kNN delivers perfect performance on the test set, achieving an accuracy and AUC of $1.00$. This reflects its ability to adapt to complex, non-linear decision boundaries, which suits the spiral dataset's structure exceptionally well.
+
+</div>
+
+<script>
+function showTab(id) {
+  var contents = document.querySelectorAll('.tab-content');
+  var buttons = document.querySelectorAll('.tab-button');
+
+  contents.forEach(function(c) {
+    c.classList.remove('active');
+  });
+  buttons.forEach(function(b) {
+    b.classList.remove('active'); 
+  });
+
+  document.getElementById(id).classList.add('active');
+  var btn = document.querySelector('button[onclick*="' + id + '"]');
+  if (btn) btn.classList.add('active');
+}
+</script>
