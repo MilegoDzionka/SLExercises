@@ -1,0 +1,1310 @@
+---
+title: "Resampling Methods"
+author: "Exercises with solutions"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: yes
+---
+
+<style>
+body {
+  max-width: none !important;
+  width: 100% !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  white-space: normal !important;
+}
+
+body .container,
+body .container-fluid,
+body .main-container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 auto;
+  padding-left: 2em;
+  padding-right: 2em;
+  box-sizing: border-box;
+}
+
+.tab-button {
+  background-color: #eee;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.tab-button.active {
+  background-color: #ccc;
+}
+
+.tab-content {
+  display: none;
+  padding: 10px;
+  border-top: 1px solid #ccc;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+
+button {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 8px 16px;
+  font-size: 15px;
+  border: 1px solid #0072B2;
+  background-color: #0072B2;
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+button:hover {
+  background-color: #005b8a;
+}
+.solution {
+  background-color: white;
+  border-left: 4px solid #0072B2;
+  padding: 10px;
+  margin-top: 5px;
+  margin-bottom: 20px;
+}
+</style>
+</style>
+
+```{r setup, include=FALSE}
+library(reticulate)
+#use_condaenv("base", conda = "D:/BabyConda/Scripts/conda.exe")
+
+#conda_path <- "D:/BabyConda/Scripts/conda.exe"
+#conda_install(envname = "base", packages = c("seaborn", "pandas", "scikit-learn"),
+#              conda = conda_path)
+
+#use_python("D:/Python/python.exe", required = TRUE)
+use_python("C:\\Users\\Dominika\\AppData\\Local\\Programs\\Python\\Python313\\python.exe")
+```
+
+<div>
+  <button class="tab-button active" onclick="showTab('r1')">R</button>
+  <button class="tab-button" onclick="showTab('py1')">Python</button>
+</div>
+
+<div id="r1" class="tab-content active">
+
+# Exercise 1
+
+The `diamonds` dataset contains prices and attributes of over $50,000$ diamonds, including characteristics such as carat size, cut, color, and clarity. In R, this dataset is available through the `ggplot2` package. You can load it using `data(diamonds, package = "ggplot2")`.
+
+The dataset includes the following variables:
+
+- **price**: price (US dollars),
+
+- **carat**: weight of the diamond,
+
+- **cut**: quality of the cut (`Fair`, `Good`, `Very Good`, `Premium`, `Ideal`),
+
+- **color**: diamond color, from `J` (worst) to `D` (best),
+
+- **clarity**: measurement of how clear the diamond is,
+
+- **x**, **y**, **z**: physical dimensions - `length`, `width`, `depth` (mm).
+
+1. Using only complete cases, fit polynomial regression models of degrees 1 through 5 to predict `price` based on `carat` (i.e., regress price on `carat`, `carat`^2, etc.).
+
+2. Use 10-fold cross-validation (e.g., with the `boot` or `caret` package) to estimate the test MSE for each polynomial degree.
+
+3. Create a plot showing polynomial degree on the x-axis and the corresponding cross-validated MSE on the y-axis.
+
+4. Which polynomial degree gives the lowest estimated test error? What does this suggest about the relationship between `carat` and `price`?
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(tibble)
+```
+
+We begin by loading `diamonds` dataset, which is available in the `ggplot2` package. Using `na.omit()` we can exclude all observations with at least one missing value. For convenience, we store `diamonds` dataset as `data.frame` object.
+
+```{r, warning=FALSE, message=FALSE}
+# Use ggplot2's diamonds dataset
+data("diamonds")
+
+# Remove observations with missing values 
+diamonds <- na.omit(diamonds)
+X <- diamonds$carat
+y <- diamonds$price
+
+# Create data frame, set seed for reproducibility
+set.seed(103)
+df <- data.frame(carat = X, price = y)
+```
+
+To fit linear regression models of `price`~`carat`^d, for $d=1,2,3,4,5$ we can use `poly()` function. You can also just create new variables corresponding to higher powers of `carat` and use them.
+
+For each degree, we do 10-fold cross validation. In the solution below it is done manually but you can use existing packages. In the code below we split observations into folds in the following way:
+
+- We repeat vector $(1,2,\ldots,10)$ until its length exceeds amount of observations $n$ and we keep only first $n$ elements.
+
+- We shuffle this sequence and assign $i-th$ observation to the fold numbered by value at $i-th$ coordinate.
+
+```{r, warning=FALSE, message=FALSE}
+# Define degrees (you can experiment with broader spectrum of values)
+degrees <- 1:5
+
+# Prepare results container - we will store results in this object
+mse_scores <- numeric(length(degrees))
+
+# Loop through polynomial degrees
+for (d in degrees) {
+  # Create polynomial terms, i.e. carat^d
+  formula <- as.formula(paste("price ~ poly(carat,", d, ", raw = TRUE)"))
+
+  # Manually perform 10-fold CV
+  n <- nrow(df)
+  # Create folds for CV
+  folds <- sample(rep(1:10, length.out = n))
+  # We will store MSE for each fold in this object
+  fold_mse <- numeric(10)
+
+  for (k in 1:10) {
+    # Select data to train model on
+    train_data <- df[folds != k, ]
+    # Remaining data for validation
+    test_data <- df[folds == k, ]
+
+    # Train the model on train_data
+    model <- lm(formula, data = train_data)
+    # Make predictions for validation set
+    preds <- predict(model, newdata = test_data)
+    # Store MSE for this fold
+    fold_mse[k] <- mean((test_data$price - preds)^2)
+  }
+  # Average MSE over folds and store
+  mse_scores[d] <- mean(fold_mse)
+}
+```
+
+We visualize how the test error (measured by 10-fold cross-validated MSE) changes with the degree of the polynomial used to model the relationship between `price` and `carat`.
+
+```{r, warning=FALSE, message=FALSE}
+# Plot MSE vs Degree 
+results_df <- tibble(Degree = degrees, MSE = mse_scores / 1e6)
+
+ggplot(results_df, aes(x = Degree, y = MSE)) +
+  geom_line(color = "#1f77b4", size = 1) +
+  geom_point(size = 3, color = "#1f77b4") +
+  labs(
+    title = "Test Error vs. Polynomial Degree",
+    x = "Polynomial Degree",
+    y = expression("10-fold Cross-Validated MSE ("*10^6* ")")
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_line(color = "grey85", size = 0.3),
+    panel.grid.minor = element_blank()
+  )
+```
+
+We determine the optimal polynomial degree by selecting the one that yields the lowest average MSE across all folds in 10-fold cross-validation.
+
+```{r warning=FALSE, message=FALSE}
+# Find best degree and print it
+best_degree <- degrees[which.min(mse_scores)]
+best_mse <- min(mse_scores)
+paste("Best polynomial degree:", best_degree, "with MSE:", round(best_mse, 2))
+```
+
+It is clear that regressing `price` on `carat`$^4$ yields the lowest average MSE among the polynomial degrees considered. However, this may not represent the global minimum, and it is worth exploring higher-degree polynomials to see if further improvements in model performance can be achieved.
+
+</div>
+
+# Exercise 2
+
+The `penguins` dataset contains size measurements for three penguin species observed on islands in the Palmer Archipelago, Antarctica.  This dataset is part of the `palmerpenguins` package. 
+
+The dataset includes the following variables:
+
+- **species**: penguin species (`Adelie`, `Gentoo`, `Chinstrap`),
+
+- **island**: island where the penguin was observed,
+
+- **bill_length_mm**: length of the bill (millimeters),
+
+- **bill_depth_mm**: depth of the bill (millimeters),
+
+- **flipper_length_mm**: length of the flipper (millimeters),
+
+- **body_mass_g**: body mass (grams),
+
+- **sex**: sex of the penguin,
+
+- **year**: year of observation.
+
+1. Fit a linear regression model to predict `body_mass_g` using `bill_length_mm` and `flipper_length_mm` as predictors. Use only complete cases.
+
+2. Use the validation set approach: randomly split the data into a training set $(70%)$ and a test set $(30%)$. Fit the model on the training set and compute the test Mean Squared Error (MSE).
+
+3. Repeat **Exercise 2.2.** fifty times using different random seeds. Report the average test MSE and its standard deviation across all repetitions.
+
+4. Use 10-fold cross-validation (`cv.glm` from the `boot` package) to estimate the test error of the same model. Compare this with the average test MSE from repeated validation.
+
+5. Use the bootstrap (`boot` package) to estimate the standard errors of the regression coefficients. Compare them with the standard errors from `summary()`.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE }
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+We start by loading `penguins` dataset. We clean the data by removing rows that contain missing values in the variables of interest (`body_mass_g`, `bill_length_mm`, `flipper_length_mm`). 
+
+Next, we separate the dataset into:
+
+- **X** - a data frame containing the predictor variables `bill_length_mm` and `flipper_length_mm`,
+
+- **y** - a vector containing the response variable `body_mass_g`.
+
+```{r, warning=FALSE, message=FALSE}
+library(boot)
+library(palmerpenguins)
+
+# Load and clean data
+# We remove only observations that have missing values in relevant columns
+penguins <- na.omit(penguins[, c("body_mass_g", "bill_length_mm", "flipper_length_mm")])
+
+# Separate predictors and target
+X <- penguins[, c("bill_length_mm", "flipper_length_mm")]
+y <- penguins$body_mass_g
+```
+
+We fit model `body_mass_g`~`bill_length_mm` + `flipper_length_mm` using `lm()` function. 
+
+```{r, warning=FALSE, message=FALSE}
+# Fit a linear model to the full clean dataset
+model_full <- lm(body_mass_g ~ bill_length_mm + flipper_length_mm, data = penguins)
+```
+
+We perform a repeated validation set approach to estimate the prediction error of our linear regression model.
+
+The dataset is split randomly $50$ times, with $70\%$ of the data used for training and $30\%$ for testing in each iteration.
+A different seed is set for each iteration to ensure randomness and reproducibility.
+
+In each iteration:
+
+- A linear regression model is fit using only the training data to predict body_mass_g from bill_length_mm and flipper_length_mm.
+
+- The model's predictions are then evaluated on the test set using Mean Squared Error (MSE).
+
+- The computed MSE is stored for later analysis.
+
+After all iterations we compute the average MSE to estimate the model's typical prediction error on unseen data.
+
+
+```{r, warning=FALSE, message=FALSE}
+# Repeated validation set approach
+
+# We will use mse_list to store mse in each iteration
+mse_list <- numeric(50)
+n <- nrow(penguins)
+
+for (seed in 1:50) {
+  # Set seed for reproducibility
+  set.seed(seed)
+  # Randomly keep 70% of data to train the model on
+  train_idx <- sample(1:n, size = floor(0.7 * n))
+  train <- penguins[train_idx, ]
+  # Remaining 30% will be for testing
+  test <- penguins[-train_idx, ]
+
+  # Linear regression model is trained only using train data
+  model <- lm(body_mass_g ~ bill_length_mm + flipper_length_mm, data = train)
+  # Test data is used for predictions
+  predictions <- predict(model, test)
+  
+  # MSE on test data is stored
+  mse_list[seed] <- mean((test$body_mass_g - predictions)^2)
+}
+
+# Average MSE over all 50 iterations, we also keep standard deviation
+avg_mse <- mean(mse_list)
+std_mse <- sd(mse_list)
+
+cat("Average Test MSE (Repeated Validation):", round(avg_mse, 2), "\n")
+cat("Standard Deviation of Test MSE:", round(std_mse, 2), "\n")
+```
+
+Repeated validation gives us average MSE of `161115.8` (in grams), which might seems large but corresponds to $\sqrt{161115.8} \approx 401.39$ grams on average. 
+
+Now we apply 10-fold cross-validation in a similar way and compare the results from these two approaches. 
+
+```{r, warning=FALSE, message=FALSE}
+# 10-fold cross-validation
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Set amount of folds
+k <- 10
+n <- nrow(penguins)
+
+# Define folds, similarly as in Exercise 1
+folds <- sample(rep(1:k, length.out = n))
+
+# We will store mse for each fold in mse_fold object
+mse_fold <- numeric(k)
+
+for (i in 1:k) {
+  # Pick fold for testing
+  test_idx <- which(folds == i)
+  # Remaining data serves as training data
+  train <- penguins[-test_idx, ]
+  test <- penguins[test_idx, ]
+
+  # Fit model on train data
+  model <- lm(body_mass_g ~ bill_length_mm + flipper_length_mm, data = train)
+  # Predict observations from test set
+  predictions <- predict(model, test)
+  # Calculate MSE for test data
+  mse_fold[i] <- mean((test$body_mass_g - predictions)^2)
+}
+
+# Report average MSE and standard deviation
+cv_mse_mean <- mean(mse_fold)
+cv_mse_std <- sd(mse_fold)
+
+cat("10-Fold CV MSE:", round(cv_mse_mean, 2), "±", round(cv_mse_std, 2), "\n")
+```
+
+10-fold cross-validation produces average MSE of `156888.5` which is lower than what we obtained with repeated validation. However, this improvement is accompanied by a notable increase in the standard deviation, indicating greater variability in performance across folds.
+
+We now proceed to apply the bootstrap method to estimate the standard errors of the model coefficients.
+
+```{r, warning=FALSE, message=FALSE}
+# Set seed for reproducibility
+set.seed(103)
+
+# Bootstrap will be performed using boot function from boot package.
+
+# boot(data, statistic, R, ...)
+#
+# data      - the dataset to resample from; can be a vector, matrix, or data frame.
+# statistic - a user-defined function of the form function(data, indices) that returns the statistic of interest.
+#             'data' is the original dataset; 'indices' is a vector of resampled indices.
+# R         - number of bootstrap replicates to perform.
+# ...       - additional arguments passed to the statistic function (if needed).
+#
+# Returns an object of class "boot", containing:
+#   - t0   : the observed value of the statistic on the original data
+#   - t    : a vector of the bootstrap replications of the statistic
+#   - R    : number of bootstrap replicates used
+#   - data : the original dataset
+#   - call : the original call to boot()
+
+
+# We define function boot_fn which will output
+# coefficients of linear model. We will pass it as 'statistic' argument
+boot_fn <- function(data, indices) {
+  d <- data[indices, ]
+  coef(lm(body_mass_g ~ bill_length_mm + flipper_length_mm, data = d))
+}
+
+
+# We perform 1000 bootstrap replications and estimate standard deviations
+boot_out <- boot(data = penguins, statistic = boot_fn, R = 1000)
+bootstrap_se <- apply(boot_out$t, 2, sd)
+
+# We print all results in a single table
+summary_df <- data.frame(
+  Coefficient = names(coef(model_full)),
+  OLS_Std_Err = summary(model_full)$coefficients[, "Std. Error"],
+  Bootstrap_Std_Err = bootstrap_se
+)
+
+print(summary_df)
+```
+
+The standard error estimates obtained via bootstrap are generally similar to those derived from the OLS model using asymptotic theory. Interestingly, all bootstrap estimates are slightly lower. There is no clear reason to favor one method over the other in terms of accuracy, as neither can be definitively considered closer to the true standard errors. However, the bootstrap approach has the advantage of being more robust to violations of model assumptions, making it a valuable complement to traditional methods.
+
+</div>
+
+# Exercise 3 
+
+The `boot` package in R can be used to apply the bootstrap to a wide range of statistics. In this exercise, you will simulate data from a known distribution and use the bootstrap to estimate the standard error and bias of the sample median.
+
+1. Generate a population of 100000 observations from a standard normal distribution using:
+
+```r
+population <- rnorm(100000)
+```
+
+2. Use Monte Carlo simulation to estimate the true sampling distribution of the sample median:
+
+    - Repeat the following 10000 times:
+
+      - Draw a random sample of size 100 from the population.
+
+      - Compute the sample median.
+
+    - Store the results and calculate the standard deviation and bias (relative to the true median).
+
+3. Draw a single random sample of size 100 from the population and compute the sample median.
+
+4. Apply the bootstrap (1000 replications) to this single sample to estimate the standard error and bias of the 
+median using:
+
+```r
+boot(data = sample, statistic = function(data, i) median(data[i]), R = 1000)
+```
+5. Compare the bootstrap-estimated standard error and bias to the true values obtained from the Monte Carlo simulation. How close are they?
+
+6. Repeat **Exercise 3.3** to **Exercise 3.5** using the interquartile range (IQR) instead of the median. 
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+We generate 100 000 observations from the standard normal distribution $\mathcal{N}(0,1)$, which will serve as our approximation of the population.
+
+```{r, warning=FALSE, message=FALSE}
+library(boot)
+# Generate population
+# Seed is set for reproducibility 
+set.seed(103)
+population <- rnorm(100000)
+```
+
+We want to approximate the sampling distribution of the median based on samples of size $100$. We repeatedly draw samples of 100 observations from the generated population and compute the median for each sample. 
+
+The resulting distribution of medians allows us to estimate both the standard deviation (as a measure of variability) and the bias of the sample median as an estimator.
+
+```{r, warning=FALSE, message=FALSE}
+# We now wish to approximate distribution of median, we will
+# generate 10.000 samples of size 100 and for each sample 
+# we will calculate the median
+n_sim <- 10000
+sample_size <- 100
+
+medians_mc <- replicate(n_sim, {
+  sample <- sample(population, sample_size)
+  median(sample)
+})
+
+# We can report standard deviation of median
+mc_std_median <- sd(medians_mc)
+# and bias of estimation (note that real median here is mean(population))
+mc_bias_median <- mean(medians_mc) - mean(population)
+```
+
+We now examine the performance of the bootstrap method by generating a single sample from the dataset and applying the bootstrap procedure based solely on this sample.
+
+```{r, warning=FALSE, message=FALSE}
+# Draw single sample and compute sample median
+sample <- sample(population, sample_size)
+sample_median <- median(sample)
+
+sample_median
+```
+
+The sample median is equal $-0.02536607$.
+
+We apply the `boot()` function from the boot package to estimate the standard error and bias of the sample median. The function `boot_median_fn` computes the median on each resampled dataset. With $1000$ bootstrap replications, we extract the standard error as the standard deviation of the bootstrap distribution and compute the bias as the difference between the mean bootstrap estimate and the original sample median.
+
+```{r, warning=FALSE, message=FALSE}
+# Define the statistic function for boot()
+boot_median_fn <- function(data, indices) {
+  median(data[indices])
+}
+
+# Perform bootstrap on the single sample using 1000 replications
+boot_out <- boot(data = sample, statistic = boot_median_fn, R = 1000)
+
+# Extract the original sample median (computed by boot)
+sample_median <- boot_out$t0
+
+# Calculate standard error as the standard deviation of the bootstrap estimates
+boot_std_median <- sd(boot_out$t)
+
+# Calculate bias as the difference between the average bootstrap estimate and the sample median
+boot_bias_median <- mean(boot_out$t) - sample_median
+```
+
+We display and compare the results obtained from the Monte Carlo simulation and the bootstrap procedure.
+
+```{r, warning=FALSE, message=FALSE}
+# We store results in data.frame and 
+# compare Monte Carlo to Bootstrap 
+median_results <- data.frame(
+  Method = c("Monte Carlo", "Bootstrap"),
+  SE = c(mc_std_median, boot_std_median),
+  Bias = c(mc_bias_median, boot_bias_median)
+)
+median_results
+```
+
+The results obtained using the Monte Carlo method can be treated as benchmark estimates, as they are based on repeated sampling from the full population. The bootstrap estimates, which rely on just a single sample, are quite close to these reference values. The difference in standard error is approximately $0.02$, and the bias differs by about $0.0026$.
+
+We will now repeat entire process for IQR.
+
+```{r, warning=FALSE, message=FALSE}
+# IQR
+
+# Number of bootstrap replications
+n_boot <- 1000
+
+# Monte Carlo
+iqrs_mc <- replicate(n_sim, {
+  s <- sample(population, sample_size)
+  IQR(s)
+})
+mc_std_iqr <- sd(iqrs_mc)
+mc_bias_iqr <- mean(iqrs_mc) - IQR(population)
+
+# Bootstrap
+sample_iqr <- IQR(sample)
+boot_iqrs <- replicate(n_boot, {
+  IQR(sample(sample, sample_size, replace = TRUE))
+})
+boot_std_iqr <- sd(boot_iqrs)
+boot_bias_iqr <- mean(boot_iqrs) - sample_iqr
+
+# Results table
+iqr_results <- data.frame(
+  Method = c("Monte Carlo", "Bootstrap"),
+  SE = c(mc_std_iqr, boot_std_iqr),
+  Bias = c(mc_bias_iqr, boot_bias_iqr)
+)
+iqr_results
+```
+
+The Standard Error of the IQR estimated using the bootstrap method is close to the value obtained via Monte Carlo simulation. While the bias estimated by the bootstrap is slightly larger, the overall difference (approximately $0.04$) remains relatively small, demonstrating that bootstrap can still provide useful insights, especially when access to the full population is limited.
+
+</div>
+
+# Exercise 4
+
+In this exercise, you will explore the stability of model selection using repeated cross-validation. The goal is to examine how often different linear models are selected as the best based on cross-validated mean squared error.
+
+1. Use the following code to load penguins dataset:
+
+```r
+url <- "https://raw.githubusercontent.com/allisonhorst/palmerpenguins/master/inst/extdata/penguins.csv"
+penguins <- na.omit(read.csv(url))
+```
+
+2.Define a set of 4 candidate models to predict `body_mass_g`:
+
+    - Model 1: `body_mass_g` ~ `flipper_length_mm`
+
+    - Model 2: `body_mass_g` ~ `flipper_length_mm` + `bill_length_mm`
+
+    - Model 3: `body_mass_g` ~ `flipper_length_mm` + `bill_depth_mm`
+
+    - Model 4: `body_mass_g` ~ `flipper_length_mm` + `bill_length_mm` + `bill_depth_mm`
+
+3. Perform the following steps 100 times:
+
+    - Randomly split the data into 10 folds.
+
+    - Use 10-fold cross-validation to estimate the test MSE of each model.
+
+    - Record which model has the lowest estimated test MSE.
+
+4. After all repetitions, report the selection frequency of each model.
+
+5. Visualize the model selection frequencies as a bar plot.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE}
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(purrr)
+library(broom)
+```
+
+We load the `penguins` dataset using the URL provided in the exercise since the version in the `palmerpenguins` package omits several useful variables. After loading the data, we remove any rows with missing values to ensure a clean dataset for modeling. To keep the code organized and readable, we define a list containing four predefined models: `Model 1`, `Model 2`, `Model 3`, `Model 4`.
+
+```{r, warning=FALSE, message=FALSE}
+# Load and clean data
+url <- "https://raw.githubusercontent.com/allisonhorst/palmerpenguins/master/inst/extdata/penguins.csv"
+penguins <- na.omit(read.csv(url))
+
+# Seed is set for reproducibility 
+set.seed(103)
+
+# For convenience we store all potential models in form of list
+models <- list(
+  "Model 1" = body_mass_g ~ flipper_length_mm,
+  "Model 2" = body_mass_g ~ flipper_length_mm + bill_length_mm,
+  "Model 3" = body_mass_g ~ flipper_length_mm + bill_depth_mm,
+  "Model 4" = body_mass_g ~ flipper_length_mm + bill_length_mm + bill_depth_mm
+)
+
+# We will store number of times model was 'best', according to average MSE, in this variable:
+selection_counts <- setNames(rep(0, length(models)), names(models))
+```
+
+We perform 10-fold cross-validation repeated $100$ times. In each repetition, the dataset is randomly partitioned into $10$ folds. For each model, we compute the average test MSE across all $10$ folds. This process is repeated $100$ times and in each iteration we record which model achieved the lowest average MSE. This will allow us to see which of predictors are "strong", i.e. which are usually chosen.
+
+```{r, warning=FALSE, message=FALSE}
+# Repeated 10-fold cross-validation
+reps <- 100
+n <- nrow(penguins)
+k <- 10
+
+# Loop over iteration first
+for (i in 1:reps) {
+  # For each iteration we select different folds split randomly
+  folds <- sample(rep(1:k, length.out = n))
+
+  mse_list <- sapply(models, function(formula) {
+    mse_fold <- numeric(k)
+    # There we loop over folds and obtain test MSE
+    for (j in 1:k) {
+      test_idx <- which(folds == j)
+      train_data <- penguins[-test_idx, ]
+      test_data <- penguins[test_idx, ]
+      model <- lm(formula, data = train_data)
+      preds <- predict(model, newdata = test_data)
+      mse_fold[j] <- mean((test_data$body_mass_g - preds)^2)
+    }
+    mean(mse_fold)
+  })
+
+  # Best model here is the one with lowest average MSE
+  best_model <- names(which.min(mse_list))
+  # We add 1 selection to the selected model
+  selection_counts[best_model] <- selection_counts[best_model] + 1
+}
+```
+
+We display how many times each model was selected across the $100$ repetitions.
+
+```{r, warning=FALSE, message=FALSE}
+# Show selection frequencies
+selection_df <- data.frame(
+  Model = names(selection_counts),
+  Frequency = as.numeric(selection_counts)
+)
+selection_df
+```
+
+From the results, we observe that `Model 1` was selected $20$ times, `Model 2` only $2$ times, `Model 3` was chosen most often ($78$ times) and `Model 4` was never selected.
+
+To better visualize these outcomes, we plot the selection frequencies.
+
+```{r, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+# Plot selection frequencies
+ggplot(selection_df, aes(x = Model, y = Frequency)) +
+  geom_bar(stat = "identity", fill = "#1f77b4") +
+  labs(title = "Model Selection Frequencies over 100 Repetitions",
+       x = "Model", y = "Selection Frequency") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Most frequently, `Model 3` is selected as the best-performing model based on average test MSE. This suggests that including `bill_depth_mm` alongside `flipper_length_mm` provides strong predictive power.
+
+In contrast, `Model 4` is never selected, indicating that adding `bill_length_mm` to a model already containing `flipper_length_mm` and `bill_depth_mm` does not lead to meaningful improvement. Similarly, `Model 2` - which adds `bill_length_mm` but not `bill_depth_mm` - is selected only rarely. This pattern suggests that `bill_length_mm` contributes little to predictive accuracy in the presence of the other variables.
+
+</div>
+
+</div>
+
+<div id="py1" class="tab-content">
+
+# Exercise 1
+
+The `diamonds` dataset contains prices and attributes of over $50,000$ diamonds, including characteristics such as carat size, cut, color, and clarity. In Python, this dataset is accessible using the `seaborn` library. To load it, write `seaborn.load_dataset("diamonds")`.
+
+The dataset includes the following variables:
+
+- **price**: price (US dollars),
+
+- **carat**: weight of the diamond,
+
+- **cut**: quality of the cut (`Fair`, `Good`, `Very Good`, `Premium`, `Ideal`),
+
+- **color**: diamond color, from `J` (worst) to `D` (best),
+
+- **clarity**: measurement of how clear the diamond is,
+
+- **x**, **y**, **z**: physical dimensions - `length`, `width`, `depth` (mm).
+
+1. Using only complete cases, fit polynomial regression models of degrees 1 through 5 to predict `price` based on `carat` (e.g., using `PolynomialFeatures` from `sklearn.preprocessing`).
+
+2. Use 10-fold cross-validation (e.g., with `cross_val_score` from `sklearn.model_selection`) to estimate the test MSE for each polynomial degree.
+
+3. Create a plot showing polynomial degree on the x-axis and the corresponding cross-validated MSE on the y-axis.
+
+4. Which polynomial degree gives the lowest estimated test error? What does this suggest about the relationship between `carat` and `price`?
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE}
+# Import required libraries
+import seaborn as sns
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt;
+
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import mean_squared_error
+```
+
+We begin by loading `diamonds` dataset, which is available in the `seaborn` package. Using `dropna()` we can exclude all observations with at least one missing value.
+
+```{python, warning=FALSE, message=FALSE}
+# set seed for reproducibility
+np.random.seed(103) 
+
+# Load diamonds dataset and drop missing values
+diamonds = sns.load_dataset("diamonds")
+diamonds = diamonds.dropna()
+
+# Keep only the relevant variables
+X = diamonds[['carat']]
+y = diamonds['price']
+```
+
+To fit linear regression models of `price`~`carat`^d, for $d=1,2,3,4,5$ we use `PolynomialFeatures()` function (we can also create new variables corresponding to higher powers of `carat` and use them).
+
+For each degree, 10-fold cross validation is done. This is done using `cross_val_score`function which is available in `sklearn` package.
+
+```{python, warning=FALSE, message=FALSE}
+# Define powers to loop through, you are free to include higher powers
+degrees = [1, 2, 3, 4, 5]
+# Prepare to store results
+mse_scores = []
+
+# Loop over polynomial degrees
+for d in degrees:
+    # For every degree d we introduce carat^d variable
+    poly = PolynomialFeatures(degree=d)
+    X_poly = poly.fit_transform(X)
+    # This variable is used to train linear regression model. Note 
+    # that this implementation does not require you to 
+    # create train/test sets yourself
+    model = LinearRegression()
+    scores = cross_val_score(model, X_poly, y, scoring='neg_mean_squared_error', cv=10)
+
+    # Store the mean MSE (convert negative to positive)
+    mse_scores.append(-scores.mean())
+```
+
+We visualize how the test error (measured by 10-fold cross-validated MSE) changes with the degree of the polynomial used to model the relationship between `price` and `carat`.
+
+```{python, warning=FALSE, message=FALSE, fig.align='center', fig.width=10, fig.height=5}
+# Results are plotted using pyplot package
+plt.figure(figsize=(8, 5))
+plt.plot(degrees, mse_scores, marker='o');
+plt.xticks(ticks=np.arange(min(degrees), max(degrees)+1, 1));
+plt.xlabel("Polynomial Degree");
+plt.ylabel("10-fold Cross-Validated MSE");
+plt.title("Test Error vs. Polynomial Degree");
+plt.grid(True);
+plt.tight_layout()
+plt.show();
+```
+
+We determine the optimal polynomial degree by selecting the one that yields the lowest average MSE across all folds in 10-fold cross-validation.
+
+```{python, warning=FALSE, message=FALSE}
+# Find the best degree according to average MSE over 10-folds
+best_degree = degrees[np.argmin(mse_scores)]
+best_mse = min(mse_scores)
+print(f"Best polynomial degree: {best_degree} with MSE: {best_mse:.2f}")
+```
+
+It is clear that regressing `price` on `carat`$^4$ yields the lowest average MSE among the polynomial degrees considered. However, this may not represent the global minimum, and it is worth exploring higher-degree polynomials to see if further improvements in model performance can be achieved.
+
+</div>
+
+# Exercise 2
+
+The `penguins` dataset contains size measurements for three penguin species observed on islands in the Palmer Archipelago, Antarctica.  This dataset is available through the `palmerpenguins` package or via `seaborn` package.
+
+The dataset includes the following variables:
+
+- **species**: penguin species (Adelie, Gentoo, Chinstrap),
+
+- **island**: island where the penguin was observed,
+
+- **bill_length_mm**: length of the bill (millimeters),
+
+- **bill_depth_mm**: depth of the bill (millimeters),
+
+- **flipper_length_mm**: length of the flipper (millimeters),
+
+- **body_mass_g**: body mass (grams),
+
+- **sex**: sex of the penguin,
+
+- **year**: year of observation.
+
+1. Fit a linear regression model to predict `body_mass_g` using `bill_length_mm` and `flipper_length_mm` as predictors. Use only complete cases.
+
+2. Use the validation set approach: randomly split the data into a training set $(70%)$ and a test set $(30%)$. Fit the model on the training set and compute the test Mean Squared Error (MSE).
+
+3. Repeat **Exercise 2.2.** $50$ times using different random seeds. Report the average test MSE and its standard deviation across all repetitions.
+
+4. Use 10-fold cross-validation (e.g., `cross_val_score` from `sklearn.model_selection`) to estimate the test error of the model. Compare this with the average test MSE from repeated validation.
+
+5. Use the bootstrap method (e.g. using `statsmodels`) to estimate the standard errors of the regression coefficients. Compare with those reported by the `summary()` output from `statsmodels.OLS`.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE, echo=FALSE}
+import warnings
+warnings.filterwarnings("ignore")
+```
+
+We start by loading `penguins` dataset. We clean the data by removing rows that contain missing values in the variables of interest (`body_mass_g`, `bill_length_mm`, `flipper_length_mm`). 
+
+Next, we separate the dataset into:
+
+- **X** - a data frame containing the predictor variables `bill_length_mm` and `flipper_length_mm`,
+
+- **y** - a vector containing the response variable `body_mass_g`.
+
+```{python, warning=FALSE, message=FALSE}
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+import statsmodels.api as sm
+from sklearn.utils import resample
+import seaborn as sns
+
+# set seed for reproducibility
+np.random.seed(103) 
+
+# Load dataset
+penguins = sns.load_dataset("penguins")
+
+# Drop rows with missing values at important variables
+penguins_clean = penguins.dropna(subset=["body_mass_g", "bill_length_mm", "flipper_length_mm"])
+
+# Features and target defined seperately, for clarity of code
+X = penguins_clean[["bill_length_mm", "flipper_length_mm"]]
+y = penguins_clean["body_mass_g"]
+```
+
+We fit model `body_mass_g`~`bill_length_mm` + `flipper_length_mm` using `OLS()` function. 
+
+```{python, warning=FALSE, message=FALSE}
+# Fit a linear regression model on the full clean dataset
+X_const = sm.add_constant(X)
+model_full = sm.OLS(y, X_const).fit();
+```
+
+We perform a repeated validation set approach to estimate the prediction error of our linear regression model.
+
+The dataset is split randomly $50$ times, with $70\%$ of the data used for training and $30\%$ for testing in each iteration.
+A different seed is set for each iteration to ensure randomness and reproducibility.
+
+In each iteration:
+
+- A linear regression model is fit using only the training data to predict body_mass_g from bill_length_mm and flipper_length_mm.
+
+- The model's predictions are then evaluated on the test set using Mean Squared Error (MSE).
+
+- The computed MSE is stored for later analysis.
+
+After all iterations we compute the average MSE to estimate the model's typical prediction error on unseen data.
+
+```{python, warning=FALSE, message=FALSE}
+# Repeated validation set approach
+mse_list = []
+for seed in range(50):
+    # For each seed we create test and train set
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=seed
+    );
+    lm = LinearRegression();
+    lm.fit(X_train, y_train);
+    # Test MSE is calculated on test set
+    y_pred = lm.predict(X_test);
+    # and store MSE
+    mse = mean_squared_error(y_test, y_pred);
+    mse_list.append(mse);
+    
+# Here we average over all 50 seeds
+avg_mse = np.mean(mse_list);
+std_mse = np.std(mse_list);
+
+print("Average Test MSE (Repeated Validation):", round(avg_mse, 2));
+print("Standard Deviation of Test MSE:", round(std_mse, 2));
+```
+
+Repeated validation gives us average MSE of `153804.24` (in grams), which might seems large but corresponds to $\sqrt{153804.24} \approx 392.17$ grams on average. 
+
+We apply 10-fold cross-validation in a similar way and compare the results from these two approaches. 
+
+```{python, warning=FALSE, message=FALSE}
+# Define a LinearRegression object to store cross-validated model
+lm_cv = LinearRegression()
+# KFold function allows you to perform cross-validation without 
+# creating folds yourself. Just specify amount of folds with argument
+# n_splits. Also random_state argument allows for reproducibility
+cv = KFold(n_splits=10, shuffle=True, random_state=103)
+cv_mse = -cross_val_score(lm_cv, X, y, scoring="neg_mean_squared_error", cv=cv)
+
+# Average MSE and Std, averaged over folds
+cv_mse_mean = cv_mse.mean()
+cv_mse_std = cv_mse.std()
+
+print("10-Fold CV MSE:", round(cv_mse_mean, 2), "±", round(cv_mse_std, 2));
+```
+
+
+10-fold cross-validation produces average MSE of `155471.76` which is a bit higher than what we obtained with repeated validation. However, the standard deviation is significantly higher.
+
+We now proceed to apply the bootstrap method to estimate the standard errors of the model coefficients.
+
+```{python, warning=FALSE, message=FALSE}
+# Bootstrap to estimate standard errors of coefficients
+n_bootstraps = 1000
+coefs = np.zeros((n_bootstraps, X.shape[1] + 1))  # +1 for intercept
+
+for i in range(n_bootstraps):
+    X_resampled, y_resampled = resample(X, y)
+    X_resampled_const = sm.add_constant(X_resampled)
+    model = sm.OLS(y_resampled, X_resampled_const).fit()
+    coefs[i, :] = model.params
+
+bootstrap_se = coefs.std(axis=0)
+
+# Organize results
+coef_names = ["Intercept"] + list(X.columns)
+summary_df = pd.DataFrame({
+    "Coefficient": coef_names,
+    "OLS Std. Err.": model_full.bse.values,
+    "Bootstrap Std. Err.": bootstrap_se
+})
+
+print("Standard errors comparison (OLS vs Bootstrap):")
+print(summary_df)
+```
+
+Standard deviation estimates are similar for both bootstrap and OLS, which are obtained using asymptotic results. However, all of bootstrap estimates are lower. There is no a priori reason to assume that one of these two is better/closer to real standard deviations. Bootstrap, however, is more robust to violations of assumptions.
+
+</div>
+
+# Exercise 3
+
+The `numpy`, `scipy`, and `scikit`-learn libraries can be used to simulate and bootstrap statistics in Python. In this exercise, you will work with synthetic data and apply the bootstrap to estimate standard error and bias.
+
+1. Generate a population of $100 000$ observations from a standard normal distribution:
+
+```python
+import numpy as np
+population = np.random.normal(loc=0, scale=1, size=100000)
+```
+2. Use Monte Carlo simulation to estimate the true sampling distribution of the sample median:
+
+    -  the following 10000 times:
+
+      - Draw a sample of size 100 from the population.
+
+      - Compute the median.
+
+    - Store the results and compute the standard deviation and bias relative to the true median.
+
+3. Draw a single random sample of size $100$ from the population and compute the sample median.
+
+4. Apply the bootstrap (1000 resamples) to estimate the standard error and bias of the median:
+
+    - Resample with replacement from the single sample.
+
+    - Compute the median for each bootstrap sample.
+
+    - Calculate the standard deviation and bias of the bootstrapped medians.
+
+5. Compare the bootstrap estimates to the values obtained from the Monte Carlo simulation. Are they close?
+
+6. Repeat **Exercise 3.3** to **Exercise 3.5** using the interquartile range (IQR) instead of the median. Discuss any differences.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+We generate $100 000$ observations from the standard normal distribution $\mathcal{N}(0,1)$, which will serve as our approximation of the population. 
+
+```{python, warning=FALSE, message=FALSE}
+import numpy as np
+
+# Set seed for reproducibility
+np.random.seed(103) 
+
+# Generate 100 000 observations. These will serve as general population
+population = np.random.normal(loc=0, scale=1, size=100000)
+```
+
+We want to approximate the sampling distribution of the median based on samples of size $100$. We repeatedly draw samples of 100 observations from the generated population and compute the median for each sample. 
+
+The resulting distribution of medians allows us to estimate both the standard deviation (as a measure of variability) and the bias of the sample median as an estimator.
+
+```{python, warning=FALSE, message=FALSE}
+# Monte Carlo simulation for sampling distribution of the median
+n_sim = 10000
+sample_size = 100
+medians_mc = np.array([
+    np.median(np.random.choice(population, size=sample_size, replace=False))
+    for _ in range(n_sim)
+])
+
+mc_std_median = np.std(medians_mc)
+
+# Bias of median estimator. Note that we subtract np.mean(population), which is "true"
+# median in population, rather than theoretical median which is 0.
+mc_bias_median = np.mean(medians_mc) - np.mean(population)
+```
+
+We now examine the performance of the bootstrap method by generating a single sample from the dataset and applying the bootstrap procedure based solely on this sample.
+
+```{python, warning=FALSE, message=FALSE}
+# Draw single sample and compute sample median
+sample = np.random.choice(population, size=sample_size, replace=False)
+sample_median = np.median(sample)
+```
+
+Bootstrap can be performed using `np.random.choice()` function from `numpy` package. Contrary to R, we do not need to define separate function. 
+
+```{python, warning=FALSE, message=FALSE}
+# Bootstrap estimation of SE and bias for the median
+n_boot = 1000
+boot_medians = np.array([
+    np.median(np.random.choice(sample, size=sample_size, replace=True))
+    for _ in range(n_boot)
+])
+
+boot_std_median = np.std(boot_medians)
+boot_bias_median = np.mean(boot_medians) - sample_median
+```
+
+```{python, warning=FALSE, message=FALSE}
+# Step 5: Compare Monte Carlo to Bootstrap for median in table form
+median_results = pd.DataFrame({
+    "Method": ["Monte Carlo", "Bootstrap"],
+    "SE": [mc_std_median, boot_std_median],
+    "Bias": [mc_bias_median, boot_bias_median]
+})
+median_results
+```
+
+The results obtained using the Monte Carlo method can be treated as benchmark estimates, as they are based on repeated sampling from the full population. The bootstrap estimates, which rely on just a single sample, are quite close to these reference values. The difference in standard error is approximately $0.01$, and the bias differs by about $0.05$.
+
+We will now repeat entire process for IQR.
+
+```{python, warning=FALSE, message=FALSE}
+
+# Monte Carlo
+iqrs_mc = np.array([
+    np.percentile(np.random.choice(population, size=sample_size, replace=False), 75) -
+    np.percentile(np.random.choice(population, size=sample_size, replace=False), 25)
+    for _ in range(n_sim)
+])
+mc_std_iqr = np.std(iqrs_mc)
+mc_bias_iqr = np.mean(iqrs_mc) - np.percentile(population, 75) + np.percentile(population, 25)
+
+# Bootstrap
+sample_iqr = np.percentile(sample, 75) - np.percentile(sample, 25)
+boot_iqrs = np.array([
+    np.percentile(np.random.choice(sample, size=sample_size, replace=True), 75) -
+    np.percentile(np.random.choice(sample, size=sample_size, replace=True), 25)
+    for _ in range(n_boot)
+])
+boot_std_iqr = np.std(boot_iqrs)
+boot_bias_iqr = np.mean(boot_iqrs) - sample_iqr
+
+# Results table
+iqr_results = pd.DataFrame({
+    "Method": ["Monte Carlo", "Bootstrap"],
+    "SE": [mc_std_iqr, boot_std_iqr],
+    "Bias": [mc_bias_iqr, boot_bias_iqr]
+})
+iqr_results
+```
+
+The Standard Error of the IQR estimated using the bootstrap method is close to the value obtained via Monte Carlo simulation. While the bias estimated by the bootstrap is slightly larger, the overall difference (approximately $0.002$) remains relatively small, demonstrating that bootstrap can still provide useful insights, especially when access to the full population is limited.
+
+</div>
+
+# Exercise 4
+
+In this exercise, you will explore the stability of model selection using repeated cross-validation. The goal is to examine how often different linear models are selected as the best based on cross-validated mean squared error.
+
+1. Load the penguins dataset. You can use `seaborn`:
+
+```python
+import seaborn as sns
+penguins = sns.load_dataset("penguins")
+```
+
+2. Define a set of 4 candidate models to predict `body_mass_g`:
+
+    - Model 1: `body_mass_g` ~ `flipper_length_mm`
+
+    - Model 2: `body_mass_g` ~ `flipper_length_mm` + `bill_length_mm`
+    
+    - Model 2: `body_mass_g` ~ `flipper_length_mm` + `bill_depth_mm`
+
+    - Model 4: `body_mass_g` ~ `flipper_length_mm` + `bill_length_mm` + `bill_depth_mm`
+
+3.Perform the following steps $100$ times:
+
+    - Randomly split the data into 10 folds.
+
+    - Use 10-fold CV to estimate the test MSE of each model.
+
+    - Record which model has the lowest estimated test MSE.
+
+4. After all repetitions, report the selection frequency of each model.
+
+5. Visualize the model selection frequencies as a bar plot.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE}
+# Import libraries and set seed
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt;
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score, KFold
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import make_pipeline
+
+# Set seed for reproducibility
+np.random.seed(103) 
+```
+
+We load `penguins` dataset which is available in `seaborn` package. To keep the code organized and readable, we define a list containing four predefined models: `Model 1`, `Model 2`, `Model 3`, `Model 4`.
+
+```{python, warning=FALSE, message=FALSE}
+# Load penguins dataset
+penguins = sns.load_dataset("penguins").dropna()
+```
+
+```{python, warning=FALSE, message=FALSE}
+# Define predictors for each model
+features = [
+    ['flipper_length_mm'],
+    ['flipper_length_mm', 'bill_length_mm'],
+    ['flipper_length_mm', 'bill_depth_mm'],
+    ['flipper_length_mm', 'bill_length_mm', 'bill_depth_mm']
+]
+model_names = ["Model 1", "Model 2", "Model 3","Model 4"]
+y = penguins['body_mass_g']
+```
+
+We perform 10-fold cross-validation repeated $100$ times. In each repetition, the dataset is randomly partitioned into $10$ folds. For each model, we compute the average test MSE across all $10$ folds. This process is repeated $100$ times and in each iteration we record which model achieved the lowest average MSE. This will allow us to see which of predictors are "strong", i.e. which are usually chosen.
+
+```{python, warning=FALSE, message=FALSE}
+# Step: Repeated CV and model selection
+selection_counts = {name: 0 for name in model_names}
+reps = 100
+
+for _ in range(reps):
+    kf = KFold(n_splits=10, shuffle=True)
+    mse_list = []
+
+    for fset in features:
+        X = penguins[fset]
+        # Preprocessing for categorical variable 'sex'
+        preprocessor = ColumnTransformer([
+            ('cat', OneHotEncoder(drop='first'), ['sex'])
+        ], remainder='passthrough') if 'sex' in fset else 'passthrough'
+
+        model = make_pipeline(preprocessor, LinearRegression())
+        scores = cross_val_score(model, X, y, cv=kf, scoring='neg_mean_squared_error')
+        mse = -scores.mean()
+        mse_list.append(mse)
+
+    best_model_idx = np.argmin(mse_list)
+    selection_counts[model_names[best_model_idx]] += 1
+```
+
+We display how many times each model was selected across the $100$ repetitions.
+
+```{python, warning=FALSE, message=FALSE}
+# Convert results to DataFrame
+selection_df = pd.DataFrame.from_dict(selection_counts, orient='index', columns=['Frequency'])
+selection_df = selection_df.reset_index().rename(columns={'index': 'Model'})
+selection_df
+```
+
+From the results, we observe that `Model 1` was selected $30$ times, `Model 2` only $10$ times, `Model 3` was chosen most often ($52$ times) and `Model 4` was selected $8$ times.
+
+To better visualize these outcomes, we plot the selection frequencies.
+
+```{python, warning=FALSE, message=FALSE, fig.align='center', fig.width=8, fig.height=4}
+# Plot selection frequencies
+plt.figure(figsize=(8, 4));
+plt.bar(selection_df['Model'], selection_df['Frequency'], color='#1f77b4');
+plt.xlabel("Model");
+plt.ylabel("Selection Frequency");
+plt.title("Model Selection Frequencies over 100 Repetitions");
+plt.grid(axis='y');
+plt.tight_layout();
+plt.show();
+```
+
+The results show that `Model 3` is selected most frequently, indicating it offers the best predictive performance in the majority of repetitions. `Model 4` is chosen only occasionally, suggesting that adding `bill_length_mm` as a predictor provides little to no improvement when `flipper_length_mm` and `bill_depth_mm` are already included in the model. This implies that `bill_length_mm` may not contribute significant additional predictive value.
+
+</div>
+
+</div>
+
+<script>
+function showTab(id) {
+  var contents = document.querySelectorAll('.tab-content');
+  var buttons = document.querySelectorAll('.tab-button');
+
+  contents.forEach(function(c) {
+    c.classList.remove('active');
+  });
+  buttons.forEach(function(b) {
+    b.classList.remove('active'); 
+  });
+
+  document.getElementById(id).classList.add('active');
+  var btn = document.querySelector('button[onclick*="' + id + '"]');
+  if (btn) btn.classList.add('active');
+}
+</script>
+
+<script>
+function toggleSolution(button) {
+  var solution = button.nextElementSibling;
+  if (solution.style.display === "none") {
+    solution.style.display = "block";
+  } else {
+    solution.style.display = "none";
+  }
+}
+</script>
