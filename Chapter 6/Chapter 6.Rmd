@@ -1,0 +1,1327 @@
+---
+title: "Linear Model Selection and Regularization"
+author: "Exercises with solutions"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: yes
+    df_print: kable
+---
+
+<style>
+body {
+  max-width: none !important;
+  width: 100% !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  white-space: normal !important;
+}
+
+body .container,
+body .container-fluid,
+body .main-container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 auto;
+  padding-left: 2em;
+  padding-right: 2em;
+  box-sizing: border-box;
+}
+
+.tab-button {
+  background-color: #eee;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.tab-button.active {
+  background-color: #ccc;
+}
+
+.tab-content {
+  display: none;
+  padding: 10px;
+  border-top: 1px solid #ccc;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+
+button {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 8px 16px;
+  font-size: 15px;
+  border: 1px solid #0072B2;
+  background-color: #0072B2;
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+button:hover {
+  background-color: #005b8a;
+}
+.solution {
+  background-color: white;
+  border-left: 4px solid #0072B2;
+  padding: 10px;
+  margin-top: 5px;
+  margin-bottom: 20px;
+}
+</style>
+</style>
+
+```{r setup, include=FALSE}
+library(reticulate)
+use_condaenv("base", conda = "D:/BabyConda/Scripts/conda.exe")
+
+#conda_path <- "D:/BabyConda/Scripts/conda.exe"
+#conda_install(envname = "base", packages = c("seaborn", "pandas", "scikit-learn","IPython","tabulate"),
+#              conda = conda_path)
+ 
+#use_python("D:/Python/python.exe", required = TRUE)
+#use_python("C:\\Users\\Dominika\\AppData\\Local\\Programs\\Python\\Python313\\python.exe")
+```
+
+<div>
+  <button class="tab-button active" onclick="showTab('r1')">R</button>
+  <button class="tab-button" onclick="showTab('py1')">Python</button>
+</div>
+
+<div id="r1" class="tab-content active">
+
+# Exercise 1
+
+The `diamonds` dataset contains prices and attributes of over $50,000$ diamonds. It is available in R via the `ggplot2` package. This dataset can be loaded with 
+
+```r
+data(diamonds, package = "ggplot2")
+```
+The dataset includes the following variables:
+
+  - `price`: price (US dollars)
+
+  - `carat`: weight of the diamond
+
+  - `cut`: quality of the cut
+
+  - `color`: diamond color - from `J` (worst) to `D` (best)
+
+  - `clarity`: measurement of how clear the diamond is
+
+  - `depth`: total depth percentage
+
+  - `table`: width of the top of the diamond relative to the widest point
+
+  - `x`, `y`, `z`: physical dimensions (mm) - `length`, `width`, `depth`
+
+The aim is to build and compare linear regression models for predicting diamond prices using stepwise selection methods based on the Bayesian Information Criterion (BIC).
+
+1. Load the `diamonds` dataset from the `ggplot2` package. Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z`.
+
+2. Fit a full linear model predicting price using`carat`, `depth`, `table`, `x`, `y`, `z`.
+
+3. Perform forward stepwise selection using the `step()` function, with direction set to `"forward"`. Use BIC as the selection criterion.
+
+4. Perform backward stepwise selection using `step()` with direction set to `"backward"`. Use BIC as the selection criterion.
+
+5. Report which predictors were selected in each method (forward selection, backward selection, full linear model). Fit each selected model and report its adjusted $R^2$. Did both stepwise selection methods choose the same model? 
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+```
+
+```{r, warning=FALSE,message=FALSE, echo=FALSE}
+# Seed is set for reproducibility 
+set.seed(103)
+```
+We begin by loading the `diamonds` dataset from `ggplot2` and creating a subset with only the relevant numeric predictors listed in the exercise.
+
+```{r, warning=FALSE, message=FALSE}
+# Load the diamonds dataset
+data(diamonds, package = "ggplot2")
+diamonds <- diamonds[, c("price", "carat", "depth", "table", "x", "y", "z")]
+diamonds <- na.omit(diamonds)
+```
+Fit the linear model using selected predictors.
+
+```{r, warning=FALSE, message=FALSE}
+# Fit linear model using lm() function 
+full_model <- lm(price ~ carat + depth + table + x + y + z, data = diamonds)
+```
+We perform forward stepwise selection to identify a subset of predictors that best explain the variation in diamond prices. We start from the simplest model (*the empty_model*), which includes only the intercept.
+
+The `step()` function is used to add predictors one at a time, at each step choosing the one that most improves the model according to the **Bayesian Information Criterion** (BIC). We set $k = log(n)$ to ensure that BIC is used instead of the default AIC. The model grows until no additional predictor improves the BIC. The final selected model is stored in *forward_model*.
+
+```{r, warning=FALSE, message=FALSE}
+# Forward stepwise selection using BIC
+# We start with empty model, denoted as empty_model
+empty_model <- lm(price ~ 1, data = diamonds)
+
+# step() function allows us to perform stepwise selection
+
+# step(object, scope, direction = c("both", "backward", "forward"), trace = 1, k = 2)
+#
+# object    - an initial model object of class "lm" or "glm", typically created by lm() or glm().
+# scope     - defines the range of models examined in the stepwise search; can be a formula or list specifying lower and upper bounds.
+# direction - character string indicating the direction of stepwise search:
+#               - "forward" starts with a minimal model and adds terms,
+#               - "backward" starts with a maximal model and removes terms,
+#               - "both" performs both forward and backward steps (default).
+# trace     - controls verbosity of output; 0 for no output, higher values give increasingly detailed information.
+# k         - the multiple of the penalty term (default is 2, corresponding to AIC; log(n) corresponds to BIC).
+# 
+# Returns an object of class "lm" or "glm" 
+
+forward_model <- step(empty_model,
+                      scope = list(lower = empty_model, upper = full_model),
+                      direction = "forward",
+                      k = log(nrow(diamonds)),
+                      trace = FALSE)
+```
+Next, we perform backward stepwise selection. We start from the full model and using the `step()` function with `direction = "backward"`, we iteratively remove one variable at a time, choosing at each step the variable whose exclusion leads to the greatest improvement in the BIC. The process continues until no further removal improves the BIC.
+
+```{r, warning=FALSE, message=FALSE}
+# Backward stepwise selection using step() function 
+backward_model <- step(full_model,
+                       direction = "backward",
+                       k = log(nrow(diamonds)),
+                       trace = FALSE)
+```
+To evaluate the model selection methods, we examine the predictors selected by forward and backward stepwise selection and assess their performance relative to the full linear model, using adjusted $R^2$ as a measure of model quality.
+
+```{r, warning=FALSE, message=FALSE}
+# Compare selected predictors and adjusted R-squared
+
+# Extract names of the selected variables
+selected_full <- names(coef(full_model))[-1]
+selected_forward <- names(coef(forward_model))[-1]
+selected_backward <- names(coef(backward_model))[-1]
+
+# Extract adjusted R-squared statistic for all models
+adj_r2_full <- summary(full_model)$adj.r.squared
+adj_r2_forward <- summary(forward_model)$adj.r.squared
+adj_r2_backward <- summary(backward_model)$adj.r.squared
+
+knitr::kable(
+  data.frame(
+    Model = c("Forward Selection", "Backward Selection", "Linear Model"),
+    Predictors = sapply(list(selected_forward, selected_backward, selected_full), paste, collapse = ", "),
+    Adjusted_R2 = c(adj_r2_forward, adj_r2_backward, adj_r2_full)
+  ),
+  format = "markdown"
+)
+```
+We observe that both forward and backward stepwise selection  selected the same four predictors (`carat`, `depth`, `table`, `x`) though in a different order. Both models achieved an identical adjusted $R^2$ of $0.8591862$, indicating equivalent explanatory power.
+
+The full linear model, which includes all six predictors, yields a slightly higher adjusted $R^2$ $(0.8592030)$. However, the improvement in model fit is marginal compared to the increase in complexity.
+
+Using BIC as the selection criterion, both stepwise methods determined that excluding `y` and `z` provides a better trade-off between model complexity and predictive performance.
+
+</div>
+
+
+# Exercise 2 
+
+We focus on `diamonds` dataset from **Exercise 1**. Load the diamonds dataset using `ggplot2`:
+
+```r
+data(diamonds, package = "ggplot2")
+```
+Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z`.
+
+The goal is to examine how Ridge and Lasso regression techniques apply regularization and how the model coefficients behave across varying levels of penalty strength.
+
+1. Standardize the numeric predictors.
+
+2. Fit Ridge regression models over a grid of values of regularization parameters $\lambda$ using `glmnet` package.
+
+3. Plot how the fitted coefficients change as a function of $\operatorname{log}(\lambda)$ using `coef()` function. Store and plot the coefficient paths for each $\lambda$ value.
+
+4. Repeat the process for Lasso regression using `Lasso`.
+
+5. Compare the coefficient paths: which variables are most affected by regularization? 
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE}
+# Load required libraries
+library(ggplot2)
+library(glmnet)
+library(tidyr)
+```
+We start by loading the data like in **Exercise 1** and selecting only the relevant numeric predictors and the response variable `price`.
+
+```{r, warning=FALSE, message=FALSE}
+# Load and prepare the diamonds dataset
+data(diamonds, package = "ggplot2")
+diamonds <- na.omit(diamonds[, c("carat", "depth", "table", "x", "y", "z", "price")])
+```
+We standardize all predictors ($\mu = 0$, $\sigma =  1$) to prepare the data for Ridge and Lasso regression.
+
+We define a grid of $100$ $\lambda$ values on a log scale to explore a wide range of penalty strengths.
+
+```{r, warning=FALSE, message=FALSE}
+# scale() performs z-scaling, ensuring sample  mean is 0 and variance is 1.
+X <- scale(as.matrix(diamonds[, c("carat", "depth", "table", "x", "y", "z")]))
+y <- diamonds$price
+
+# We define a grid of possible regularization parameters. Note that it is
+# order of magnitude that we focus on here and not precise value
+lambdas <- 10^seq(-2, 5, length.out = 100)
+```
+
+We fit a Ridge regression model using `glmnet()` function with $\lambda = 0$, which imposes $L^2$ regularization. 
+
+```{r, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+# Ridge regression using glmnet() function:
+
+# glmnet(x, y, family = c("gaussian", "binomial", "poisson", "multinomial", "cox", "mgaussian"), alpha = 1, lambda = NULL, standardize = TRUE, intercept = TRUE)
+#
+# x            - input matrix of predictors; typically numeric.
+# y            - response vector (numeric for regression, factor/numeric for classification, or survival object for Cox).
+# family       - specifies the model type:
+#                "gaussian" for linear regression,
+#                "binomial" for logistic regression,
+#                "poisson" for count data,
+#                "multinomial" for multiclass logistic regression,
+#                "cox" for Cox proportional hazards model,
+#                "mgaussian" for multivariate Gaussian.
+# alpha        - elastic net mixing parameter (0 = ridge, 1 = lasso, 0 < alpha < 1 = elastic net).
+# lambda       - user-specified sequence of regularization parameters; default is computed automatically.
+# standardize  - logical; if TRUE (default), predictors are standardized to have mean 0 and variance 1.
+# intercept    - logical; if TRUE (default), includes an intercept in the model.
+#
+# Returns an object of class "glmnet" containing:
+#   - beta         : coefficients for each value of lambda
+#   - a0           : intercept values for each lambda
+#   - lambda       : sequence of regularization parameters used
+#   - dev.ratio    : fraction of null deviance explained by each model
+#   - df           : number of nonzero coefficients at each lambda
+#   - call         : the original call to glmnet()
+#   - family       : the specified model type
+
+# Data is already scaled, so we do not scale it again (even though it would 
+# have no impact). alpha is set to zero to perform Ridge regression.
+ridge_fit <- glmnet(X, y, alpha = 0, lambda = lambdas, standardize = FALSE)
+
+# We extract coefficient for each lambda considered using beta attribute
+coef_matrix <- as.matrix(ridge_fit$beta)
+ridge_df <- as.data.frame(t(coef_matrix))
+ridge_df$log_lambda <- log10(ridge_fit$lambda)
+ridge_df <- pivot_longer(ridge_df, -log_lambda, names_to = "Predictor", values_to = "Coefficient")
+```
+
+To better understand how the regularization affects each predictor, we extract and visualize the coefficient paths over a sequence of $\lambda$ values on a logarithmic scale.
+
+```{r, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+# Plot Ridge coefficient paths
+ggplot(ridge_df, aes(x = log_lambda, y = Coefficient, color = Predictor)) +
+  geom_line(size = 1) +
+  labs(title = "Ridge Coefficient Paths", x = "log10(alpha)", y = "Coefficient") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.title = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_line(color = "grey85", size = 0.3),
+    panel.grid.minor = element_blank()
+  )
+```
+
+The `carat` variable stands out as the most influential predictor, maintaining the largest coefficient across the full range of $\lambda$.
+
+`x` begins with a large negative coefficient (around $–2000$), but decreases rapidly under regularization, indicating instability and sensitivity to penalization.
+
+`depth` and `table`, `y` and `z` exhibit smaller coefficients that diminish steadily as $\lambda$ increases.
+
+We now fit Lasso regression $(alpha = 1)$, which applies $L^1$ regularization. Then we extract and visualize the coefficient paths.
+
+```{r, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+# Lasso regression using glmnet() function, note that alpha = 1
+lasso_fit <- glmnet(X, y, alpha = 1, lambda = lambdas, standardize = FALSE)
+coef_matrix <- as.matrix(lasso_fit$beta)
+lasso_df <- as.data.frame(t(coef_matrix))
+lasso_df$log_lambda <- log10(lasso_fit$lambda)
+lasso_df <- pivot_longer(lasso_df, -log_lambda, names_to = "Predictor", values_to = "Coefficient")
+
+# Plot Lasso coefficient paths
+ggplot(lasso_df, aes(x = log_lambda, y = Coefficient, color = Predictor)) +
+  geom_line(size = 1) +
+  labs(title = "Lasso Coefficient Paths", x = "log10(alpha)", y = "Coefficient") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.title = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_line(color = "grey85", size = 0.3),
+    panel.grid.minor = element_blank()
+  )
+```
+
+`carat` is again the most dominant predictor with a large coefficient that remains nonzero until very high $\lambda$ values. This highlights its consistent predictive strength.
+
+`x` initially holds a large negative coefficient but is quickly reduced to zero as regularization increases. This suggests it is important in the unregularized model but not stable under penalization.
+
+`z` and `y` shrink at relatively low levels of $\lambda$. This indicates that Lasso identifies them as less important for predicting `price`.
+
+`depth` and `table` have small coefficients throughout and are also pushed to zero as $\lambda$ increases further.
+
+To summarize, Ridge regression retains all predictors in the model, shrinking their coefficients proportionally based on their contribution and correlation with the response. In contrast, Lasso regression performs automatic variable selection by setting many coefficients exactly to zero, resulting in a simpler and more interpretable model.
+
+Across both methods, `carat` consistently stands out as the most robust and influential predictor of diamond `price`, while the rest variables (`x`, `y`, `z`, `depth` and `table`) are more strongly penalized, with Lasso frequently excluding them entirely from the final model.
+
+</div>
+
+# Exercise 3 
+
+We again focus on `diamonds` dataset from **Exercise 1**. Load the diamonds dataset using `ggplot2`:
+
+```r
+data(diamonds, package = "ggplot2")
+```
+Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z`.
+
+The goal is to compare Principal Components Regression and Partial Least Squares regression in terms of predictive performance on the `diamonds` dataset.
+
+1. Standardize the numeric predictors.
+
+2. Apply Principal Components Regression (PCR) using the `pls` package. Use cross-validation to select the number of components. Calculate the Mean Squared Error of Prediction (MSE) for each number of components.
+
+3. Apply Partial Least Squares (PLS) regression using the same predictors. Again use cross-validation to select the number of components. Calculate MSE for each number of components.
+
+4. For both methods, plot cross-validated test MSE as a function of the number of components. Report the optimal number of components and test MSE for each method.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(pls)
+library(tidyr)
+```
+
+As in **Exercise 2**, we begin by loading the `diamonds` dataset, selecting the relevant numeric predictors and standardizing them.
+
+```{r, warning=FALSE, message=FALSE}
+# Load and scale data
+data(diamonds, package = "ggplot2")
+diamonds <- diamonds[, c("carat", "depth", "table", "x", "y", "z", "price")]
+diamonds <- na.omit(diamonds)
+X <- diamonds[, 1:6]
+y <- diamonds$price
+X_scaled <- scale(X)
+```
+
+We fit a PCR model using up to $6$ components (all that we have) and perform 10-fold cross-validation to estimate the prediction error. The `MSEP()` function gives the Mean Squared Error of Prediction (MSE) for each number of components. We extract the test MSE values for components $1$ to $6$.
+
+```{r, warning=FALSE, message=FALSE}
+# We fit PCR using pcr() function: 
+
+# pcr(y ~ X, scale = FALSE, validation = c("none", "CV", "LOO"))
+#
+# X           -  matrix or data frame of predictor variables
+# y           -  numeric vector; the response variable to be modelled.
+# validation  -  type of validation: "none" (default), "CV" (cross-validation), or "LOO" (leave-one-out cross-validation).
+# ncomp       -  number of principal components to build models for. If not supplied the largest possible number of components
+#                is determined.
+#
+# Returns an object of class "pcr" containing:
+#   - coefficients : regression coefficients for each component
+#   - scores       : principal component scores
+#   - validation   : results of cross-validation if performed
+#   - fitted.values: fitted response values
+#   - residuals    : residuals from the model
+#   - ncomp        : number of components used
+
+pcr_model <- pcr(y ~ X_scaled, validation = "CV", ncomp = 6, scale = FALSE, segments = 10)
+
+# Extract cross-validated MSEs from the PCR model for 1 to 6 principal components.
+# [1, 1, -1] selects:
+# - the first response variable (if multivariate),
+# - the first validation method ("CV"),
+# - all components except 0 (i.e., components 1 to 6)
+
+mse_pcr <- MSEP(pcr_model)$val[1, 1, -1]
+```
+
+Next, we fit a PLS model using the same standardized predictors and number of components. We extract the test MSE for each model from the cross-validation output.
+
+```{r, warning=FALSE, message=FALSE}
+# plsr() function is analogous to the pcr() function. It returns object of class "plsr". 
+pls_model <- plsr(y ~ X_scaled, validation = "CV", ncomp = 6, scale = FALSE, segments = 10)
+
+# Extract cross-validated MSEs from the PLS model for components 1 to 6 
+mse_pls <- MSEP(pls_model)$val[1, 1, -1]
+```
+
+We plot the test MSE as a function of the number of components for both PCR and PLS.
+
+```{r, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+#Plot the results
+results_df <- tibble(
+  Components = 1:6,
+  PCR = mse_pcr,
+  PLS = mse_pls
+) %>%
+  pivot_longer(-Components, names_to = "Method", values_to = "MSE")
+
+ggplot(results_df, aes(x = Components, y = MSE, color = Method)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "CV MSE vs. Number of Components", x = "Number of Components", y = "10-fold CV MSE") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.title = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_line(color = "grey85", size = 0.3),
+    panel.grid.minor = element_blank()
+  )
+```
+
+PLS consistently achieves lower MSE than PCR across every component counts. This suggests that PLS is more efficient, as it incorporates information from the response variable when constructing components.
+
+We extract the optimal number of components (the one with the lowest test MSE) for each method.
+
+```{r, warning=FALSE, message=FALSE}
+# "Optimal" models according to MSE 
+# Note that necessarly both will be the same
+# i.e. the full model. However we can see how MSE changes as
+# number of components decrease
+
+opt_pcr <- which.min(mse_pcr)
+opt_pls <- which.min(mse_pls)
+
+summary_df <- data.frame(
+  Method = c("PCR", "PLS"),
+  Optimal_Components = c(opt_pcr, opt_pls),
+  Test_MSE = c(mse_pcr[opt_pcr], mse_pls[opt_pls])
+)
+summary_df
+```
+
+Both PCR and PLS achieve their lowest CV MSE using $6$ components which is to be expected.  The final CV MSEs are very similar, numerically equal.
+
+</div>
+
+# Exercise 4
+
+We again focus on `diamonds` dataset from **Exercise 1**. Load the diamonds dataset using `ggplot2`:
+
+```r
+data(diamonds, package = "ggplot2")
+```
+Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z`.
+
+1. Standardize all predictors.
+
+2. Repeat following procedure 100 times:
+
+    - Split dataset into train (70%) and test (30%) data
+    - Perform:
+        - Lasso regression. Note which coefficients were non-zero (assume
+          that coefficient is zero if its absolute value is less than 1e-6).
+        - Forward stepwise selection. Note which variables were selected.
+        - Backward stepwise selection. Note which varoables were selected.
+          
+3. Report results and create a bar plot to visualize selection frequency for each variable.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(MASS)
+library(glmnet)
+library(leaps)
+```
+
+As in **Exercise 2**, we start by loading the `diamonds` dataset, selecting the relevant numeric predictors and standardizing them.
+
+```{r, warning=FALSE, message=FALSE}
+# Load and scale data
+data(diamonds, package = "ggplot2")
+df <- na.omit(diamonds[, c("x", "y", "z", "depth", "carat", "table", "price")])
+X <- df[, -which(names(df) == "price")]
+y <- df$price
+X_scaled <- scale(X)
+```
+
+We now loop over $100$ iterations. In each iteration, we randomly split the data into a $70\%$ training set and $30\%$ test set, then apply the three variable selection methods.
+
+```{r, warning=FALSE, message=FALSE}
+
+# Seed is set for reproducibility 
+set.seed(407)
+
+# Define variables to store results
+lasso_counts <- setNames(rep(0, ncol(X)), colnames(X))
+forward_counts <- lasso_counts
+backward_counts <- lasso_counts
+
+
+for (i in 1:100) {
+  # Separate observations into train and test sets
+  idx <- sample(1:nrow(X), size = 0.7 * nrow(X))
+  X_train <- X_scaled[idx, ]
+  y_train <- y[idx]
+  X_test <- X_scaled[-idx, ]
+  y_test <- y[-idx]
+
+  # Define lasso regression (by alpha = 1)
+  cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1)
+  # We do not have to look for optimal lambda, it is done automatically
+  # You can access coefficients corresponding to model with best lambda
+  # be calling $lambda.mid attribute 
+  lasso_coef <- coef(cv_lasso, s = cv_lasso$lambda.min)[-1]
+  selected_lasso <- abs(as.vector(lasso_coef)) > 1e-6
+  lasso_counts[selected_lasso] <- lasso_counts[selected_lasso] + 1
+
+  train_df <- as.data.frame(X_train)
+  train_df$y <- y_train
+
+  # Define full and empty models
+  full_model <- lm(y ~ ., data = train_df)
+  empty_model <- lm(y ~ 1, data = train_df)
+
+  # Backward stepwise selection using step() function
+  model_bwd <- step(full_model,
+                    scope = list(lower = empty_model, upper = full_model),
+                    direction = "backward",
+                    k = log(nrow(train_df)),
+                    trace = 0)
+  coef_bwd <- names(coef(model_bwd))[-1]
+  backward_counts[coef_bwd] <- backward_counts[coef_bwd] + 1
+
+  # Forward stepwise selection using step() function
+  model_fwd <- step(empty_model,
+                    scope = list(lower = empty_model, upper = full_model),
+                    direction = "forward",
+                    k = log(nrow(train_df)),
+                    trace = 0)
+  coef_fwd <- names(coef(model_fwd))[-1]
+  forward_counts[coef_fwd] <- forward_counts[coef_fwd] + 1
+}
+```
+
+After completing all $100$ repetitions, we compile the selection counts for each variable across the three methods into a long-format *data.frame* for plotting.
+
+```{r, warning=FALSE, message=FALSE}
+# Store results as data.frame object 
+selection_df <- data.frame(
+  Lasso = lasso_counts,
+  Backward = backward_counts,
+  Forward = forward_counts,
+  row.names = names(lasso_counts)
+)
+
+# Move row names to a column
+selection_df <- tibble::rownames_to_column(selection_df, var = "Variable")
+
+selection_df
+```
+
+We visualize the results using bar plot, which shows the selection frequency of each variable across $100$ random data splits for each method.
+
+```{r, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+# Plot results as ba rplot 
+selection_long <- pivot_longer(selection_df, -Variable, names_to = "Method", values_to = "Count")
+
+ggplot(selection_long, aes(x = Variable, y = Count, fill = Method)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Selection Frequency (out of 100) for Each Variable", y = "Selection Count") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_line(color = "grey85", size = 0.3),
+    panel.grid.minor = element_blank()
+  )
+```
+
+We observe that `carat`, `depth`, `table` and `x` were selected in every iteration by all three methods, indicating they are consistently strong predictors of `price`.
+
+The variable `y` was selected only by Lasso method, $28$ times, suggesting it has limited predictive value and is often redundant given the other variables.
+
+The variable `z` was included more often by Lasso and Forward selection, but was almost entirely excluded by Backward selection, indicating potential instability in its relevance depending on the method used.
+
+</div>
+
+</div>
+
+<div id="py1" class="tab-content">
+
+```{python, warning=FALSE, message=FALSE, echo=FALSE}
+from IPython.display import display
+import numpy as np
+
+# set seed for reproducibility
+np.random.seed(103) 
+```
+
+# Exercise 1
+
+The `diamonds` dataset contains prices and attributes of over $50,000$ diamonds. It is available in R via the `ggplot2` package. This dataset can be loaded using 
+
+```python
+import seaborn as sns
+
+sns.load_dataset("diamonds")
+```
+The dataset includes the following variables:
+
+  - `price`: price in US dollars (target variable)
+
+  - `carat`: weight of the diamond (numeric)
+
+  - `cut`: quality of the cut (ordinal categorical)
+
+  - `color`: diamond color, from J (worst) to D (best) (ordinal categorical)
+
+  - `clarity`: measurement of how clear the diamond is (ordinal categorical)
+
+  - `depth`: total depth percentage
+
+  - `table`: width of the top of the diamond relative to the widest point
+
+  - `x`, `y`, `z`: physical dimensions in mm (length, width, depth)
+  
+The aim is to build and compare linear regression models for predicting diamond prices using stepwise selection methods based on the Bayesian Information Criterion (BIC).
+
+1. Load the diamonds dataset using seaborn. Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z`.
+
+2. Fit a full linear regression model predicting price using these numeric predictors.
+
+3. Perform forward stepwise selection using `sklearn.feature_selection.SequentialFeatureSelector`, with  `direction="forward"`. For `scoring` argument write `bic_score` function which will calculate BIC value. Use `make_scorer` function available in `sklearn.metrics`
+
+```python
+bic_scorer = make_scorer(bic_score, greater_is_better=True)
+```
+
+4. Perform backward stepwise selection using the same method with `direction="backward"`.
+
+5. Report which predictors were selected in each method (forward selection, backward selection, full linear model). Fit each selected model and report its adjusted $R^2$. Did both stepwise selection methods choose the same model? 
+ 
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE}
+# Load required libraries
+import pandas as pd
+import seaborn as sns
+import statsmodels.api as sm
+from sklearn.feature_selection import SequentialFeatureSelector
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import make_scorer
+```
+
+We begin by loading the `diamonds` dataset from `seaborn` and creating a subset with only the relevant numeric predictors listed in the exercise.
+
+```{python, warning=FALSE, message=FALSE}
+# Load the diamonds dataset from seaborn package
+diamonds = sns.load_dataset("diamonds")
+
+# We keep only variables of interest
+diamonds = diamonds[["price", "carat", "depth", "table", "x", "y", "z"]].dropna()
+X = diamonds.drop(columns="price")
+y = diamonds["price"]
+```
+
+We fit the linear regression model using selected predictors. The model is estimated using the `OLS()` function from `statsmodels`, and the adjusted $R^2$s recorded as a baseline measure of model fit.
+
+```{python, warning=FALSE, message=FALSE}
+# We add intercept manually, because OLS() function does not do that by default
+X_full = sm.add_constant(X)
+
+# Fit full linear regression model
+full_model = sm.OLS(y, X_full).fit();
+
+# Extract adjusted R-squared
+full_adj_r2 = full_model.rsquared_adj
+R2_full = pd.DataFrame({"Adjusted_R2": [full_adj_r2]})
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Render result_table from Python using R's knitr::kable
+knitr::kable(py$R2_full)
+```
+
+We perform forward stepwise selection using `LinearRegression()` function to identify a subset of predictors that best explain the variation in diamond prices. We start from the simplest model (*the empty_model*), which includes only the intercept. We make `bic_score` function which will calculate BIC value.
+
+```{python, warning=FALSE, message=FALSE}
+# To perform forward setpwise selection we use LinearRegression() function.
+# Note that we do not add intercept as this function adds it by default
+lr = LinearRegression()
+
+# sklearn.feature_selection.SequentialFeatureSelector(estimator, *, 
+#                                                     n_features_to_select=None, 
+#                                                     direction='forward', 
+#                                                     scoring=None, 
+#                                                     cv=5)
+#
+# estimator             - a scikit-learn estimator with a fit method and a coef_ or feature_importances_ attribute.
+# direction             - 'forward' for forward selection (default), 'backward' for backward elimination.
+# scoring               - a string or callable to evaluate feature subsets (e.g., 'r2', 'neg_mean_squared_error').
+# cv                    - determines the cross-validation splitting strategy (int or cross-validation generator).
+#
+# Returns a fitted SequentialFeatureSelector object with:
+#   - get_support()      : boolean mask of selected features
+#   - transform(X)       : reduced feature set with only selected columns
+#   - support_           : indices of selected features
+#   - n_features_to_select_ : the actual number of selected features
+
+# Unfortunately, BIC is not a scoring function built in by default. We can, however
+# create our own scoring function
+
+def bic_score(estimator, X, y):
+    n, k = X.shape  # number of observations and predictors
+    y_pred = estimator.predict(X)
+    residuals = y - y_pred
+    rss = np.sum(residuals**2)
+    if rss <= 0:  # avoid log(0) or log of negative due to numerical errors
+        rss = 1e-10
+    bic = n * np.log(rss / n) + k * np.log(n)
+    return -bic  # negative because scikit-learn assumes higher score is better
+
+bic_scorer = make_scorer(bic_score, greater_is_better=True)
+
+sfs_forward = SequentialFeatureSelector(lr, direction="forward", scoring=bic_scorer, cv=10)
+
+# We fit selected object from SequentialFeatureSelector(). This function returns only
+# best subset of variables and not a model, so optimal model needs
+# to be fit separately, e.g. using OLS()
+
+sfs_forward.fit(X, y);
+forward_vars = X.columns[sfs_forward.get_support()].tolist()
+X_forward = sm.add_constant(X[forward_vars])
+forward_model = sm.OLS(y, X_forward).fit();
+```
+
+```{python, warning=FALSE, message=FALSE, echo = FALSE}
+stepwise_r2_forw = pd.DataFrame({"Adjusted_R2": [forward_model.rsquared_adj]})
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+knitr::kable(py$stepwise_r2_forw)
+```
+
+Next, we perform backward stepwise selection. We start from the full model and then we iteratively remove one variable at a time, choosing at each step the variable whose exclusion leads to the greatest improvement in the BIC. The process continues until no further removal improves the BIC.
+
+```{python, warning=FALSE, message=FALSE}
+# Perform backward stepwise selection (analogously to forward stepwise selection)
+sfs_backward = SequentialFeatureSelector(lr, direction="backward", scoring=bic_scorer, cv=10)
+sfs_backward.fit(X, y);
+backward_vars = X.columns[sfs_backward.get_support()].tolist()
+X_backward = sm.add_constant(X[backward_vars])
+backward_model = sm.OLS(y, X_backward).fit();
+```
+
+```{python, warning=FALSE, message=FALSE, echo = FALSE}
+stepwise_r2_back = pd.DataFrame({"Adjusted_R2": [backward_model.rsquared_adj]})
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+knitr::kable(py$stepwise_r2_back)
+```
+
+To evaluate the model selection methods, we examine the predictors selected by forward and backward stepwise selection and assess their performance relative to the full linear model, using adjusted $R^2$ as a measure of model quality.
+
+```python
+# Report selected predictors and adjusted R^2
+result_table = pd.DataFrame({
+    "Model": ["Forward Selection", "Backward Selection", "Linear Model"],
+    "Predictors": [", ".join(forward_vars), ", ".join(backward_vars), ", ", "price, carat, depth, table, x, y, z"],
+    "Adjusted_R2": [round(forward_model.rsquared_adj, 5), round(backward_model.rsquared_adj, 5), round(full_model.rsquared_adj, 5)]
+})
+
+result_table
+```
+```{python, warning=FALSE, message=FALSE, echo = FALSE}
+# Report selected predictors and adjusted R^2
+result_table = pd.DataFrame({
+    "Model": ["Forward Selection", "Backward Selection", "Linear Model"],
+    "Predictors": [", ".join(forward_vars), ", ".join(backward_vars), "price, carat, depth, table, x, y, z"],
+    "Adjusted_R2": [round(forward_model.rsquared_adj, 5), round(backward_model.rsquared_adj, 5), round(full_model.rsquared_adj, 5)]
+})
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Render result_table from Python using R's knitr::kable
+knitr::kable(py$result_table)
+```
+
+We observe that both forward and backward stepwise selection  selected the same four predictors (`carat`, `depth`, `table`, `x`) though in a different order. Both models achieved an identical adjusted $R^2$ of $0.8591862$, indicating equivalent explanatory power.
+
+The full linear model, which includes all six predictors, yields a slightly higher adjusted $R^2$ $(0.8592030)$. However, the improvement in model fit is marginal compared to the increase in complexity.
+
+Using BIC as the selection criterion, both stepwise methods determined that excluding `y` and `z` provides a better trade-off between model complexity and predictive performance.
+
+Forward Selection selected `carat`, `depth` and `table`, achieving an adjusted $R^2$ of approximately $0.85367$ 
+Backward Selection, in contrast, selected `x`, `y` and `z`, resulting in a noticeably lower adjusted $R^2$ of approximately $0.78253$. This suggests that the chosen variables are less effective at explaining the variation in diamond prices.
+
+The full linear model, which includes all predictors, produced the highest adjusted  $R^2$ of approximately $0.85920$. However, the improvement over the forward-selected model is marginal, raising the question of whether the added complexity is justified.
+
+</div>
+
+# Exercise 2 
+
+We focus on `diamonds` dataset from **Exercise 1**. Load the diamonds dataset using `seaborn`:
+
+```python
+import seaborn as sns
+diamonds = sns.load_dataset("diamonds")
+```
+Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z.`
+
+The goal is to examine how Ridge and Lasso regression techniques apply regularization and how the model coefficients behave across varying levels of penalty strength.
+
+1. Standardize the numeric predictors using `StandardScaler` from `sklearn.preprocessing`.
+
+2. Fit Ridge regression models over a grid of values of regularization parameters $\lambda$ using `Ridge` from `sklearn.linear_model`.
+
+3. Plot how the fitted coefficients change as a function of $\operatorname{log}(\lambda)$. Store and plot the coefficient paths for each $\lambda$ value.
+
+4. Repeat the process for Lasso regression using `Lasso` from `sklearn.linear_model`.
+
+5. Compare the coefficient paths: which variables are most affected by regularization? 
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE}
+# Load required libraries
+import pandas as pd
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import Ridge, Lasso
+from sklearn.preprocessing import StandardScaler
+```
+
+We start by loading the data like in **Exercise 1** and selecting only the relevant numeric predictors and the response variable `price`.
+
+```{python, warning=FALSE, message=FALSE}
+# Load the diamonds dataset from seaborn package
+diamonds = sns.load_dataset("diamonds")
+
+# Keep only variables of interest
+diamonds = diamonds[["carat", "depth", "table", "x", "y", "z", "price"]].dropna()
+X = diamonds.drop(columns="price")
+y = diamonds["price"]
+```
+
+We standardize all predictors ($\mu = 0$, $\sigma =  1$) to prepare the data for Ridge and Lasso regression.
+
+```{python, warning=FALSE, message=FALSE}
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+```
+
+We define a grid of $100$ $\lambda$ values on a log scale to explore a wide range of penalty strengths. 
+
+```{python, warning=FALSE, message=FALSE}
+# Define grid of lambda (alpha) values of regularization parameters
+alphas = np.logspace(-2, 5, 100)
+```
+
+We fit a Ridge regression model using `Ridge()` function. To better understand how the regularization affects each predictor, we extract and visualize the coefficient paths over a sequence of $\lambda$ values on a logarithmic scale.
+
+```{python, warning=FALSE, message=FALSE, fig.align='center', fig.width=8, fig.height=4}
+# We store coefficients for each lambda in ridge_coefs
+ridge_coefs = []
+
+# For loop over all regularization parameters considered
+for alpha in alphas:
+    # Define Ridge object with given lambda
+    ridge = Ridge(alpha=alpha);
+    # Fit that model
+    ridge.fit(X_scaled, y);
+    # Extract coefficients
+    ridge_coefs.append(ridge.coef_);
+
+ridge_coefs = np.array(ridge_coefs);
+
+# Plot results for each variable
+plt.figure(figsize=(8, 4))
+for i in range(X.shape[1]):
+    plt.plot(np.log10(alphas), ridge_coefs[:, i], label=X.columns[i])
+plt.xlabel("log10(alpha)")
+plt.ylabel("Coefficient")
+plt.title("Ridge Coefficient Paths")
+plt.legend(loc='best', fontsize=8)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+The `carat` variable stands out as the most influential predictor, maintaining the largest coefficient across the full range of $\lambda$.
+
+`x` begins with a large negative coefficient (around $–2000$), but decreases rapidly under regularization, indicating instability and sensitivity to penalization.
+
+`depth` and `table`, `y` and `z` exhibit smaller coefficients that diminish steadily as $\lambda$ increases.
+
+We now fit Lasso regression $(alpha = 1)$, which applies $L^1$ regularization. Then we extract and visualize the coefficient paths.
+
+```{python, warning=FALSE, message=FALSE, fig.align='center', fig.width=8, fig.height=4}
+
+# Repeat the same procedure for lasso
+lasso_coefs = []
+
+for alpha in alphas:
+    lasso = Lasso(alpha=alpha, max_iter=10000);
+    lasso.fit(X_scaled, y);
+    lasso_coefs.append(lasso.coef_);
+
+lasso_coefs = np.array(lasso_coefs);
+
+
+plt.figure(figsize=(8, 4))
+for i in range(X.shape[1]):
+    plt.plot(np.log10(alphas), lasso_coefs[:, i], label=X.columns[i])
+plt.xlabel("log10(alpha)")
+plt.ylabel("Coefficient")
+plt.title("Lasso Coefficient Paths")
+plt.legend(loc='best', fontsize=8)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+`carat` is again the most dominant predictor with a large coefficient that remains nonzero until very high $\lambda$ values. This highlights its consistent predictive strength.
+
+`x` initially holds a large negative coefficient but is quickly reduced to zero as regularization increases. This suggests it is important in the unregularized model but not stable under penalization.
+
+`z` and `y` shrink at relatively low levels of $\lambda$. This indicates that Lasso identifies them as less important for predicting `price`.
+
+`depth` and `table` have small coefficients throughout and are also pushed to zero as $\lambda$ increases further.
+
+To summarize, Ridge regression retains all predictors in the model, shrinking their coefficients proportionally based on their contribution and correlation with the response. In contrast, Lasso regression performs automatic variable selection by setting many coefficients exactly to zero, resulting in a simpler and more interpretable model.
+
+Across both methods, `carat` consistently stands out as the most robust and influential predictor of diamond `price`, while the rest variables (`x`, `y`, `z`, `depth` and `table`) are more strongly penalized, with Lasso frequently excluding them entirely from the final model.
+
+</div>
+
+# Exercise 3 
+
+We again focus on `diamonds` dataset from **Exercise 1**. Load the diamonds dataset using `seaborn`:
+
+```python
+import seaborn as sns
+diamonds = sns.load_dataset("diamonds")
+```
+Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z.`
+
+The goal is to compare Principal Components Regression and Partial Least Squares regression in terms of predictive performance on the `diamonds` dataset.
+
+1. Standardize the numeric predictors using `StandardScaler` from `sklearn.preprocessing`.
+
+2. Apply Principal Components Regression (PCR): perform PCA and then use the transformed components in a linear regression. Use cross-validation to select the number of components.
+
+3. Apply Partial Least Squares (PLS) regression using `sklearn.cross_decomposition.PLSRegression` with cross-validation to select the number of components.
+
+4. For both methods, plot cross-validated test MSE as a function of the number of components. Report the optimal number of components and test MSE for each method.
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE}
+# Load required libraries
+import pandas as pd
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.cross_decomposition import PLSRegression
+```
+
+As in **Exercise 2**, we begin by loading the `diamonds` dataset, selecting the relevant numeric predictors and standardizing them.
+
+```{python, warning=FALSE, message=FALSE}
+# Load the diamonds dataset from seaborn package
+diamonds = sns.load_dataset("diamonds")
+
+# Keep only variables of interest
+diamonds = diamonds[["carat", "depth", "table", "x", "y", "z", "price"]].dropna()
+X = diamonds.drop(columns="price")
+y = diamonds["price"].values
+
+# Standardize predictors
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+```
+
+We fit a PCR model using up to $6$ components (all that we have) and perform 10-fold cross-validation to estimate the prediction error. The `MSEP()` function gives the Mean Squared Error of Prediction (MSE) for each number of components. We extract the test MSE values for components $1$ to $6$.
+
+```{python, warning=FALSE, message=FALSE}
+# PCR: Evaluate CV error for different numbers of PCA components
+# Define PCA object once
+pca = PCA()
+# and fit this object on scaled data
+X_pca = pca.fit_transform(X_scaled)
+
+mse_pcr = []
+# Extract cross-validated MSE for each number of principal components
+for k in range(1, X.shape[1] + 1):
+    score = -cross_val_score(LinearRegression(), X_pca[:, :k], y, cv=10, scoring='neg_mean_squared_error').mean()
+    mse_pcr.append(score)
+```
+
+Next, we fit a PLS model using the same standardized predictors and number of components. We extract the test MSE for each model from the cross-validation output.
+
+```{python, warning=FALSE, message=FALSE}
+# PLS: Evaluate CV error for different numbers of components
+mse_pls = []
+
+# Note that in this case we need to define PLSRegression() for each number of components!
+for k in range(1, X.shape[1] + 1):
+    pls = PLSRegression(n_components=k)
+    score = -cross_val_score(pls, X_scaled, y, cv=10, scoring='neg_mean_squared_error').mean()
+    mse_pls.append(score)
+```
+
+We plot the test MSE as a function of the number of components for both PCR and PLS.
+
+```{python, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+plt.figure(figsize=(8, 4))
+plt.plot(range(1, X.shape[1] + 1), mse_pcr, label='PCR', marker='o')
+plt.plot(range(1, X.shape[1] + 1), mse_pls, label='PLS', marker='o')
+plt.xlabel("Number of Components")
+plt.ylabel("10-fold CV MSE")
+plt.title("Test MSE vs. Number of Components")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+PLS consistently achieves lower MSE than PCR across every component counts. This suggests that PLS is more efficient, as it incorporates information from the response variable when constructing components.
+
+We extract the optimal number of components (the one with the lowest test MSE) for each method.
+
+```python
+# "Optimal" models according to MSE. Note that necessarly both will be 
+#the same i.e. the full model. However we can see how MSE changes as
+# number of components decreases
+
+optimal_pcr = np.argmin(mse_pcr) + 1
+optimal_pls = np.argmin(mse_pls) + 1
+
+summary = pd.DataFrame({
+    "Method": ["PCR", "PLS"],
+    "Optimal_Components": [optimal_pcr, optimal_pls],
+    "Test_MSE": [mse_pcr[optimal_pcr-1], mse_pls[optimal_pls-1]]
+})
+summary
+```
+```{python, warning=FALSE, message=FALSE,echo = FALSE}
+optimal_pcr = np.argmin(mse_pcr) + 1
+optimal_pls = np.argmin(mse_pls) + 1
+
+summary = pd.DataFrame({
+    "Method": ["PCR", "PLS"],
+    "Optimal_Components": [optimal_pcr, optimal_pls],
+    "Test_MSE": [mse_pcr[optimal_pcr-1], mse_pls[optimal_pls-1]]
+})
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Render result_table from Python using R's knitr::kable
+knitr::kable(py$summary)
+```
+
+Both PCR and PLS achieve their lowest test MSE using $6$ components which is to be expected. The final CV test MSEs are the same, as it should be. 
+</div>
+
+
+# Exercise 4
+
+We again focus on `diamonds` dataset from **Exercise 1**. Load the diamonds dataset using `seaborn`:
+
+```python
+import seaborn as sns
+diamonds = sns.load_dataset("diamonds")
+```
+Keep only the following numeric predictors: `carat`, `depth`, `table`, `x`, `y`, `z`.
+
+1. Standardize all predictors
+
+2. Repeat following procedure 100 times:
+
+    - Split dataset into train (70%) and test (30%) data
+    - Perform:
+        - Lasso regression. Note which coefficients were non-zero (assume
+          that coefficient is zero if its absolute value is less than 1e-6)
+        - Backward stepwise selection. Note which varoables were selected
+        - Forward stepwise selection. Note which variables were selected
+      For forward and backward stepwise selection use either BIC or MSE as a metric.
+          
+3. Report results, create a bar plot to visualize selection frequency for each variable
+
+<button onclick="toggleSolution(this)">Show/Hide Solution</button>
+<div class="solution" style="display:none;">
+
+```{python, warning=FALSE, message=FALSE}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LassoCV, LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import SequentialFeatureSelector
+import seaborn as sns
+```
+
+As in **Exercise 2**, we start by loading the `diamonds` dataset, selecting the relevant numeric predictors and standardizing them.
+
+```{python, warning=FALSE, message=FALSE}
+# Load the diamonds dataset from seaborn package
+diamonds = sns.load_dataset("diamonds")
+
+# Keep only variables of interest
+X = diamonds[["x", "y", "z", "depth", "carat", "table"]].dropna()
+y = diamonds["price"].values
+
+# Scale all predictors
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+columns = X.columns
+```
+
+We now loop over $100$ iterations. In each iteration, we randomly split the data into a $70\%$ training set and $30\%$ test set, then apply the three model selection methods.
+
+```{python, warning=FALSE, message=FALSE}
+# We store results (number of times given variable was selected) in these objects:
+lasso_counts = pd.Series(0, index=columns)
+forward_counts = pd.Series(0, index=columns)
+stepwise_counts = pd.Series(0, index=columns)
+
+for _ in range(100):
+    # Split dataset into train and test data
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3)
+
+    # Perform lasso regression with parameter specified by CV (10-fold)
+    lasso = LassoCV(alphas=np.logspace(-4, 1, 100), cv=10);
+    lasso.fit(X_train, y_train);
+    # We only keep variables whose magnitude is larger than 1e-6
+    selected_lasso = np.abs(lasso.coef_) > 1e-6;
+    # Note which variables were selected
+    lasso_counts[selected_lasso] += 1;
+
+    # Perform backward stepwise selection using SequentialFeatureSelector()
+    # We use it only to identify selected features, not to refit the final model!
+    step = SequentialFeatureSelector(LinearRegression(), direction="backward", scoring="neg_mean_squared_error", cv=10);
+    step.fit(X_train, y_train);
+    # get_support() returns selected variables
+    selected_step = step.get_support();
+    stepwise_counts[selected_step] += 1;
+
+    # The same for forward stepwise selection
+    forward = SequentialFeatureSelector(LinearRegression(), direction="forward", scoring="neg_mean_squared_error", cv=10);
+    forward.fit(X_train, y_train);
+    selected_forward = forward.get_support();
+    forward_counts[selected_forward] += 1;
+```
+
+After completing all $100$ repetitions, we compile the selection counts for each variable across the three methods into a *pd.DataFrame* for plotting.
+
+```{python, warning=FALSE, message=FALSE, echo=FALSE}
+# Print results
+selection_df = pd.DataFrame({
+    "Lasso": lasso_counts,
+    "Backward": stepwise_counts,
+    "Forward": forward_counts
+})
+```
+
+```python
+# Print results
+selection_df = pd.DataFrame({
+    "Lasso": lasso_counts,
+    "Backward": stepwise_counts,
+    "Forward": forward_counts
+})
+selection_df
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Render result_table from Python using R's knitr::kable
+knitr::kable(py$selection_df)
+```
+
+```{python, fig.align='center', fig.width=8, fig.height=4, warning=FALSE, message=FALSE}
+# Plot results as a barplot
+selection_df.plot(kind="bar", figsize=(10, 4));
+plt.title("Selection Frequency (out of 100) for Each Variable");
+plt.ylabel("Selection Count");
+plt.xticks(rotation=45);
+plt.tight_layout();
+plt.grid(axis='y');
+plt.show()
+```
+
+The variables `x`, `depth`, and `carat` were selected almost every time by all three methods, confirming they are the most important predictors. 
+
+Lasso sometimes included weaker variables  `y`, `z` and `table`, which the stepwise methods ignored. This is expected, since Lasso tends to be more flexible and can handle weak or collinear signals, while Forward and Backward selection are stricter. 
+
+Overall, there is strong agreement on the top predictors and minor disagreement on the rest.
+
+</div>
+
+</div>
+
+<script>
+function showTab(id) {
+  var contents = document.querySelectorAll('.tab-content');
+  var buttons = document.querySelectorAll('.tab-button');
+
+  contents.forEach(function(c) {
+    c.classList.remove('active');
+  });
+  buttons.forEach(function(b) {
+    b.classList.remove('active'); 
+  });
+
+  document.getElementById(id).classList.add('active');
+  var btn = document.querySelector('button[onclick*="' + id + '"]');
+  if (btn) btn.classList.add('active');
+}
+</script>
+
+<script>
+function toggleSolution(button) {
+  var solution = button.nextElementSibling;
+  if (solution.style.display === "none") {
+    solution.style.display = "block";
+  } else {
+    solution.style.display = "none";
+  }
+}
+</script>
